@@ -1,0 +1,41 @@
+{
+    # Enable internal local self-signed TLS so HTTPS works on LAN IP addresses
+    # This enables PWA installation, Web Speech API (Microphone), and Geolocation on LAN
+    auto_https disable_redirects
+}
+
+:443 {
+    tls internal
+
+    # WebSocket Proxy for Home Assistant LAN bridge
+    @ha_ws {
+        path /ha-ws/*
+    }
+    reverse_proxy @ha_ws app-server:4000
+
+    # WebSocket State Sync Bus
+    @live_sync {
+        path /api/live-sync
+    }
+    reverse_proxy @live_sync app-server:4000
+
+    # REST APIs
+    @api {
+        path /api/*
+    }
+    reverse_proxy @api app-server:4000
+
+    # Go2RTC WebRTC / MSE streams
+    @go2rtc {
+        path /api/go2rtc/* /api/streams* /api/ws*
+    }
+    reverse_proxy @go2rtc go2rtc:1984
+
+    # Frontend Single Page App / Static client
+    reverse_proxy app-server:4000
+}
+
+:80 {
+    # Forward HTTP to HTTPS or directly proxy
+    redir https://{host}{uri} permanent
+}

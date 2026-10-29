@@ -1,0 +1,20 @@
+{
+  "name": "dominatee-building-os",
+  "version": "1.0.0",
+  "private": true,
+  "description": "100% Dynamic, User-Configurable, Self-Hosted (Local-First) Smart Office & Building OS",
+  "scripts": {
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "dev:go2rtc": "bin\\go2rtc.exe -config server\\go2rtc.yaml",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\" \"npm run dev:go2rtc\"",
+    "build:server": "cd server && npm run build",
+    "build:client": "cd client && npm run build",
+    "build": "npm run build:server && npm run build:client",
+    "start": "cd server && npm start",
+    "docker:up": "docker compose up -d"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

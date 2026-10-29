@@ -1,0 +1,16 @@
+api:
+  listen: :1984
+  origin: "*"
+webrtc:
+  listen: :8555
+  candidates:
+    - 127.0.0.1:8555
+    - stun:8555
+preload:
+  cam1:
+  cam2:
+streams:
+  cam1:
+    - rtsp://192.168.0.39:8554/tapo_main#tcp#backchannel=0
+  cam2:
+    - rtsp://192.168.0.38:5543/6e9bac7cd408fad79c9b47eb6624dd97/live/channel1#tcp#backchannel=0

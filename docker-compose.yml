@@ -1,0 +1,48 @@
+services:
+  app-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: dominatee_server
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./data:/app/data
+      - ./go2rtc.yaml:/app/go2rtc.yaml
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - DB_PATH=/app/data/building_os.db
+      - GO2RTC_CONFIG_PATH=/app/go2rtc.yaml
+
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    container_name: dominatee_go2rtc
+    restart: unless-stopped
+    ports:
+      - "1984:1984" # WebRTC & API
+      - "8554:8554" # RTSP
+      - "8555:8555/tcp" # WebRTC TCP
+      - "8555:8555/udp" # WebRTC UDP
+    volumes:
+      - ./go2rtc.yaml:/config/go2rtc.yaml
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: dominatee_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app-server
+      - go2rtc
+
+volumes:
+  caddy_data:
+  caddy_config:

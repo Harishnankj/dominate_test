@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import type { BootstrapData, Floor, Room, Device, Camera, IrProfile, Automation, Z2mStatus } from '../types';
+import type { BootstrapData, Floor, Room, Device, Camera, IrProfile, Automation, Z2mStatus, Z2mDevice } from '../types';
 import { ApiService } from '../services/api';
 
 interface BootstrapContextType {
@@ -15,8 +15,10 @@ interface BootstrapContextType {
   isLiveSyncConnected: boolean;
   z2mStatus: Z2mStatus | null;
   z2mStates: Record<string, any>;
+  z2mDevices: Z2mDevice[];
   getZ2mState: (friendlyName: string) => Record<string, any> | undefined;
   setZ2mState: (friendlyName: string, state: Record<string, any>) => Promise<boolean>;
+  getZ2mDevice: (friendlyNameOrIeee: string) => Z2mDevice | undefined;
 }
 
 const BootstrapContext = createContext<BootstrapContextType | undefined>(undefined);
@@ -27,6 +29,7 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [isLiveSyncConnected, setIsLiveSyncConnected] = useState(false);
   const [z2mStatus, setZ2mStatus] = useState<Z2mStatus | null>(null);
   const [z2mStates, setZ2mStates] = useState<Record<string, any>>({});
+  const [z2mDevices, setZ2mDevices] = useState<Z2mDevice[]>([]);
 
   const fetchBootstrap = useCallback(async () => {
     try {
@@ -34,6 +37,12 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setData(res);
       if (res.z2m_status) {
         setZ2mStatus(res.z2m_status);
+      }
+      if (res.z2m_devices) {
+        setZ2mDevices(res.z2m_devices);
+      }
+      if (res.z2m_states) {
+        setZ2mStates(res.z2m_states);
       }
     } catch (err) {
       console.warn('[BootstrapContext] Failed to load bootstrap:', err);
@@ -44,12 +53,22 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   useEffect(() => {
     fetchBootstrap();
-    // Load initial Zigbee2MQTT states
+    // Load initial Zigbee2MQTT states and devices
     ApiService.getZ2mStatus()
       .then((res) => {
         if (res.ok) {
           setZ2mStatus(res.status);
-          setZ2mStates(res.states || {});
+          if (res.states) {
+            setZ2mStates((prev) => ({ ...prev, ...res.states }));
+          }
+        }
+      })
+      .catch(() => { });
+
+    ApiService.getZ2mDevices()
+      .then((res) => {
+        if (res.ok && Array.isArray(res.devices)) {
+          setZ2mDevices(res.devices);
         }
       })
       .catch(() => { });
@@ -99,6 +118,11 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                   ...prev,
                   [friendly_name]: { ...prev[friendly_name], ...state },
                 }));
+              }
+            } else if (msg.type === 'z2m_devices_updated') {
+              const { devices } = msg.payload || {};
+              if (Array.isArray(devices)) {
+                setZ2mDevices(devices);
               }
             } else if (msg.type === 'z2m_status_changed') {
               setZ2mStatus(msg.payload);
@@ -178,7 +202,6 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const setVirtualState = useCallback(
     async (deviceId: string, state: any) => {
-      // Optimistically update local
       setData((prev) => {
         if (!prev) return prev;
         return {
@@ -204,6 +227,15 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return z2mStates[friendlyName];
     },
     [z2mStates]
+  );
+
+  const getZ2mDevice = useCallback(
+    (friendlyNameOrIeee: string) => {
+      return z2mDevices.find(
+        (d) => d.friendly_name === friendlyNameOrIeee || d.ieee_address === friendlyNameOrIeee
+      );
+    },
+    [z2mDevices]
   );
 
   const setZ2mState = useCallback(
@@ -238,8 +270,10 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         isLiveSyncConnected,
         z2mStatus,
         z2mStates,
+        z2mDevices,
         getZ2mState,
         setZ2mState,
+        getZ2mDevice,
       }}
     >
       {children}

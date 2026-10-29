@@ -160,6 +160,14 @@ export interface Z2mExpose {
   name?: string;
   property?: string;
   access?: number;
+  label?: string;
+  description?: string;
+  unit?: string;
+  value_min?: number;
+  value_max?: number;
+  value_step?: number;
+  values?: string[];
+  presets?: Array<{ name: string; value: number | string; description?: string }>;
   features?: Z2mExpose[];
 }
 
@@ -173,6 +181,7 @@ export interface Z2mDevice {
     vendor: string;
     description: string;
     exposes: Z2mExpose[];
+    options?: any[];
   } | null;
   power_source?: string;
   linkquality?: number;
@@ -203,4 +212,6 @@ export interface BootstrapData {
   user_count: number;
   user: User | null;
   z2m_status?: Z2mStatus;
+  z2m_devices?: Z2mDevice[];
+  z2m_states?: Record<string, any>;
 }

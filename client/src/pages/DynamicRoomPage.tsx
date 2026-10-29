@@ -22,7 +22,7 @@ interface DynamicRoomPageProps {
 }
 
 export const DynamicRoomPage: React.FC<DynamicRoomPageProps> = ({ room, onBack, onOpenAdmin }) => {
-  const { getDevicesForRoom } = useBootstrap();
+  const { getDevicesForRoom, setZ2mState } = useBootstrap();
   const { callService } = useHA(room.ha_hub_id);
 
   const devices = getDevicesForRoom(room.id);
@@ -30,9 +30,17 @@ export const DynamicRoomPage: React.FC<DynamicRoomPageProps> = ({ room, onBack, 
   // Quick Action: Turn off all lights in this room
   const handleTurnOffRoomLights = async () => {
     for (const dev of devices) {
-      if ((dev.type === 'switch_light' || dev.type === 'dimmable_light') && dev.entity_id) {
-        const domain = dev.entity_id.split('.')[0];
-        callService(domain, 'turn_off', { entity_id: dev.entity_id }).catch(() => {});
+      if (dev.type === 'switch_light' || dev.type === 'dimmable_light') {
+        let devConfig: any = {};
+        try { devConfig = JSON.parse(dev.config_json); } catch (_) {}
+        const z2mName = dev.z2m_friendly_name || devConfig.z2m_friendly_name;
+
+        if (dev.entity_id) {
+          const domain = dev.entity_id.split('.')[0];
+          callService(domain, 'turn_off', { entity_id: dev.entity_id }).catch(() => {});
+        } else if (z2mName) {
+          setZ2mState(z2mName, { state: 'OFF' }).catch(() => {});
+        }
       }
     }
   };

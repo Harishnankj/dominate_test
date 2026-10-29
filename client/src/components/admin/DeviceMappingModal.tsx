@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Search, Check, Cpu, Plus, Sparkles, Sliders, Radio } from 'lucide-react';
+import { X, Search, Check, Cpu, Plus, Sparkles, Sliders, Radio, SunMedium, Flame, Percent, Zap, SlidersHorizontal, Palette, Signal } from 'lucide-react';
 import type { Device, DeviceType, HaHub, IrProfile, Room } from '../../types';
 import { ApiService } from '../../services/api';
+import { DIMMABLE_LIGHT_CONTROLS, DEFAULT_ENABLED_LIGHT_CONTROLS } from '../devices/deviceControlConfigs';
 
 interface DeviceMappingModalProps {
   isOpen: boolean;
@@ -36,6 +37,7 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
 
   // Config fields
   const [maxWattage, setMaxWattage] = useState(18);
+  const [enabledControls, setEnabledControls] = useState<string[]>(DEFAULT_ENABLED_LIGHT_CONTROLS);
   const [irProfileId, setIrProfileId] = useState(irProfiles[0]?.id || '');
   const [upEntityId, setUpEntityId] = useState('');
   const [downEntityId, setDownEntityId] = useState('');
@@ -60,6 +62,11 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
       try {
         const cfg = JSON.parse(initialDevice.config_json || '{}');
         if (cfg.max_wattage) setMaxWattage(cfg.max_wattage);
+        if (cfg.enabled_controls && Array.isArray(cfg.enabled_controls)) {
+          setEnabledControls(cfg.enabled_controls);
+        } else {
+          setEnabledControls(DEFAULT_ENABLED_LIGHT_CONTROLS);
+        }
         if (cfg.ir_profile_id) setIrProfileId(cfg.ir_profile_id);
         if (cfg.up_entity_id) setUpEntityId(cfg.up_entity_id);
         if (cfg.down_entity_id) setDownEntityId(cfg.down_entity_id);
@@ -70,6 +77,7 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
       setTargetRoomId(roomId || (rooms[0]?.id || ''));
       setName('');
       setSelectedEntityId('');
+      setEnabledControls(DEFAULT_ENABLED_LIGHT_CONTROLS);
     }
   }, [initialDevice, hubs, roomId, rooms]);
 
@@ -133,6 +141,7 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
     const config: Record<string, any> = {};
     if (deviceType === 'dimmable_light') {
       config.max_wattage = maxWattage;
+      config.enabled_controls = enabledControls;
     } else if (deviceType === 'ac_ir') {
       config.ir_profile_id = irProfileId;
     } else if (deviceType === 'blinds_relay') {
@@ -322,14 +331,88 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
 
           {/* Type-Specific Configurations */}
           {deviceType === 'dimmable_light' && (
-            <div className="bg-slate-900/60 p-3 rounded-xl border border-white/5">
-              <label className="block text-xs font-semibold text-slate-300 mb-1">Max Wattage (for power gauge)</label>
-              <input
-                type="number"
-                value={maxWattage}
-                onChange={(e) => setMaxWattage(Number(e.target.value))}
-                className="w-full glass-input rounded-xl px-3 py-1.5 text-xs text-white"
-              />
+            <div className="space-y-3">
+              <div className="bg-slate-900/60 p-3 rounded-xl border border-white/5">
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Max Wattage (for power gauge)</label>
+                <input
+                  type="number"
+                  value={maxWattage}
+                  onChange={(e) => setMaxWattage(Number(e.target.value))}
+                  className="w-full glass-input rounded-xl px-3 py-1.5 text-xs text-white"
+                />
+              </div>
+
+              {/* Customizable UI Controls Selector */}
+              <div className="bg-slate-900/60 p-3.5 rounded-xl border border-white/5 space-y-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <label className="text-xs font-semibold text-cyan-300 flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5 text-cyan-400" /> Visible UI Controls & Features
+                    </label>
+                    <p className="text-[10px] text-slate-400">
+                      Only the controls selected below will be visible for this device in the UI.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setEnabledControls(['brightness', 'color_temp'])}
+                      className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-slate-300 hover:text-white"
+                    >
+                      Minimal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEnabledControls(['brightness', 'color_temp', 'cct_presets', 'power_wattage'])}
+                      className="px-2 py-0.5 rounded text-[10px] font-semibold bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30"
+                    >
+                      Standard
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEnabledControls(DIMMABLE_LIGHT_CONTROLS.map((c) => c.id))}
+                      className="px-2 py-0.5 rounded text-[10px] font-semibold bg-purple-500/20 text-purple-300 hover:bg-purple-500/30"
+                    >
+                      All
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                  {DIMMABLE_LIGHT_CONTROLS.map((ctrl) => {
+                    const isChecked = enabledControls.includes(ctrl.id);
+                    return (
+                      <label
+                        key={ctrl.id}
+                        className={`flex items-start gap-2.5 p-2 rounded-xl border cursor-pointer select-none transition-all ${
+                          isChecked
+                            ? 'bg-slate-800 border-cyan-500/40 text-white'
+                            : 'bg-slate-950/40 border-white/5 text-slate-400 hover:bg-slate-800/40'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setEnabledControls((prev) => [...prev, ctrl.id]);
+                            } else {
+                              setEnabledControls((prev) => prev.filter((id) => id !== ctrl.id));
+                            }
+                          }}
+                          className="rounded bg-slate-900 border-white/20 text-cyan-400 focus:ring-0 mt-0.5"
+                        />
+                        <div className="text-xs">
+                          <span className="font-semibold block leading-tight">{ctrl.label}</span>
+                          <span className="text-[10px] text-slate-400 block leading-tight mt-0.5">
+                            {ctrl.description}
+                          </span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
 

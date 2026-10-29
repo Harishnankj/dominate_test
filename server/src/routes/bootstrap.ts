@@ -40,6 +40,8 @@ router.get('/', (req, res) => {
     return res.json({
       config: safeConfig,
       z2m_status: mqttService.getStatus(),
+      z2m_devices: mqttService.getDiscoveredDevices(),
+      z2m_states: mqttService.getAllDeviceStates(),
       hubs,
       floors,
       rooms,

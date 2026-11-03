@@ -8,39 +8,67 @@ import { SwitchLightTile } from '../components/devices/SwitchLightTile';
 import { AcIrTile } from '../components/devices/AcIrTile';
 import { ClimateTile, CoverTile } from '../components/devices/ClimateTile';
 import { BlindsRelayTile } from '../components/devices/BlindsRelayTile';
-import { PresenceSensorTile, ExhaustFanTile, TtlockTile } from '../components/devices/SpecialtyTiles';
+import {
+  PresenceSensorTile,
+  ExhaustFanTile,
+  TtlockTile,
+  EnvironmentalSensorTile,
+  EnergyMeterTile,
+  SmartKnobTile,
+} from '../components/devices/SpecialtyTiles';
 
 interface FavoritePageProps {
   onSelectRoom: (roomId: string) => void;
   onOpenAdmin: () => void;
+  onNavigateToRooms?: () => void;
 }
 
-export const FavoritePage: React.FC<FavoritePageProps> = ({ onSelectRoom, onOpenAdmin }) => {
-  const { data } = useBootstrap();
+export const FavoritePage: React.FC<FavoritePageProps> = ({ onSelectRoom, onOpenAdmin, onNavigateToRooms }) => {
+  const { data, setZ2mState, setTuyaState } = useBootstrap();
   const { favorites, isFavorite } = useAuth();
   const { callService } = useHA();
 
   const allDevices = data?.devices || [];
 
-  // Pinned favorites or devices marked for default dashboard
-  const displayDevices = allDevices.filter(
-    (d) => isFavorite(d.id) || d.show_on_default_dashboard === 1
-  );
+  // Show only user-pinned favorites
+  const displayDevices = allDevices.filter((d) => isFavorite(d.id));
 
   // Quick Global Actions
-  const handleTurnOffAll = () => {
+  const handleTurnOffAll = async () => {
     for (const dev of allDevices) {
-      if ((dev.type === 'switch_light' || dev.type === 'dimmable_light') && dev.entity_id) {
-        const domain = dev.entity_id.split('.')[0];
-        callService(domain, 'turn_off', { entity_id: dev.entity_id }).catch(() => {});
+      if (dev.type === 'switch_light' || dev.type === 'dimmable_light') {
+        let devConfig: any = {};
+        try { devConfig = JSON.parse(dev.config_json); } catch (_) {}
+        const z2mName = dev.z2m_friendly_name || devConfig.z2m_friendly_name;
+        const tuyaId = dev.tuya_device_id || devConfig.tuya_device_id;
+
+        if (z2mName) {
+          setZ2mState(z2mName, { state: 'OFF' }).catch(() => {});
+        }
+        if (tuyaId) {
+          setTuyaState(tuyaId, { switch_1: false, state: 'OFF' }).catch(() => {});
+        }
+        if (dev.entity_id) {
+          const domain = dev.entity_id.split('.')[0];
+          callService(domain, 'turn_off', { entity_id: dev.entity_id }).catch(() => {});
+        }
       }
     }
   };
 
-  const handleMorningRoutine = () => {
+  const handleMorningRoutine = async () => {
     for (const dev of allDevices) {
-      if (dev.type === 'dimmable_light' && dev.entity_id) {
-        callService('light', 'turn_on', { entity_id: dev.entity_id, brightness_pct: 80, color_temp_kelvin: 4000 }).catch(() => {});
+      if (dev.type === 'dimmable_light') {
+        let devConfig: any = {};
+        try { devConfig = JSON.parse(dev.config_json); } catch (_) {}
+        const z2mName = dev.z2m_friendly_name || devConfig.z2m_friendly_name;
+
+        if (z2mName) {
+          setZ2mState(z2mName, { state: 'ON', brightness: 200 }).catch(() => {});
+        }
+        if (dev.entity_id) {
+          callService('light', 'turn_on', { entity_id: dev.entity_id, brightness_pct: 80, color_temp_kelvin: 4000 }).catch(() => {});
+        }
       }
     }
   };
@@ -51,9 +79,9 @@ export const FavoritePage: React.FC<FavoritePageProps> = ({ onSelectRoom, onOpen
       <div className="glass-panel rounded-2xl p-4 border border-white/10 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-extrabold text-white flex items-center gap-2">
-            <Star className="w-5 h-5 text-amber-400 fill-amber-400" /> Executive Dashboard
+            <Star className="w-5 h-5 text-amber-400 fill-amber-400" /> Favorites Dashboard
           </h2>
-          <p className="text-xs text-slate-400">Quick controls & pinned office devices</p>
+          <p className="text-xs text-slate-400">Quick controls & pinned favorite devices</p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -74,12 +102,22 @@ export const FavoritePage: React.FC<FavoritePageProps> = ({ onSelectRoom, onOpen
 
       {/* Pinned Device Tiles */}
       {displayDevices.length === 0 ? (
-        <div className="glass-panel rounded-2xl p-8 text-center border border-dashed border-white/10 space-y-3">
+        <div className="glass-panel rounded-2xl p-8 text-center border border-dashed border-white/10 space-y-4">
           <Star className="w-10 h-10 text-amber-400 mx-auto opacity-50" />
-          <h3 className="text-sm font-bold text-white">No favorite devices pinned yet</h3>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            Click the star icon on any light, AC, blinds, or camera tile to pin it to your quick dashboard.
-          </p>
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold text-white">No favorite devices pinned yet</h3>
+            <p className="text-xs text-slate-400 max-w-sm mx-auto">
+              Your Zigbee and Wi-Fi devices are connected in your rooms. Click below to view your rooms and click the star ⭐ icon on any device to pin it to your quick dashboard.
+            </p>
+          </div>
+          {onNavigateToRooms && (
+            <button
+              onClick={onNavigateToRooms}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-sky-500 hover:from-cyan-400 hover:to-sky-400 text-slate-950 font-bold text-xs shadow-glow transition-all inline-flex items-center gap-2 active:scale-95"
+            >
+              <Briefcase className="w-4 h-4" /> Browse Rooms & Devices
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -103,6 +141,12 @@ export const FavoritePage: React.FC<FavoritePageProps> = ({ onSelectRoom, onOpen
                 return <ExhaustFanTile key={device.id} device={device} />;
               case 'ttlock':
                 return <TtlockTile key={device.id} device={device} />;
+              case 'environmental_sensor':
+                return <EnvironmentalSensorTile key={device.id} device={device} />;
+              case 'energy_meter':
+                return <EnergyMeterTile key={device.id} device={device} />;
+              case 'smart_knob':
+                return <SmartKnobTile key={device.id} device={device} />;
               default:
                 return <SwitchLightTile key={device.id} device={device} />;
             }

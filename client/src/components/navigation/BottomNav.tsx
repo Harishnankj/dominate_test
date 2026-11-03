@@ -1,5 +1,5 @@
 import React from 'react';
-import { Star, LayoutGrid, Video, Wand2, MessageSquareText, UserCheck, Shield } from 'lucide-react';
+import { Star, LayoutGrid, Video, Wand2, MessageSquareText } from 'lucide-react';
 
 interface BottomNavProps {
   currentTab: string;
@@ -12,7 +12,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentTab, setCurrentTab 
     { id: 'view', label: 'Rooms', icon: LayoutGrid },
     { id: 'cctv', label: 'CCTV', icon: Video },
     { id: 'scenes', label: 'Scenes', icon: Wand2 },
-    { id: 'attendance', label: 'HR Punch', icon: UserCheck },
     { id: 'chat', label: 'Assistant', icon: MessageSquareText },
   ];
 

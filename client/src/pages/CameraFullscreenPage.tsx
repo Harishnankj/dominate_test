@@ -95,8 +95,14 @@ export const CameraFullscreenPage: React.FC<CameraFullscreenPageProps> = ({ came
   };
 
   const handleSnapshot = () => {
-    // Capture snapshot from video element
-    const videoEl = document.querySelector('video') as HTMLVideoElement | null;
+    // Capture snapshot strictly from the current camera's video element inside this container
+    const container = streamContainerRef.current;
+    if (!container) {
+      showStatus('Stream container not found', true);
+      return;
+    }
+
+    const videoEl = container.querySelector('video') as HTMLVideoElement | null;
     if (videoEl && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
       try {
         const canvas = document.createElement('canvas');
@@ -114,9 +120,13 @@ export const CameraFullscreenPage: React.FC<CameraFullscreenPageProps> = ({ came
           showStatus('Snapshot saved to Downloads');
           return;
         }
-      } catch (_) {}
+      } catch (err: any) {
+        console.error('Snapshot capture error:', err);
+        showStatus('Snapshot capture failed', true);
+        return;
+      }
     }
-    showStatus('Snapshot captured');
+    showStatus('Camera video not ready for snapshot', true);
   };
 
   return (

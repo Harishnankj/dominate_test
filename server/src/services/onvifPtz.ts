@@ -111,15 +111,14 @@ export async function ptzMove(
     await device.ptzMove({ speed: { x, y, z }, timeout: 1 });
   }
 
-  if (durationMs > 0) {
-    const timer = setTimeout(async () => {
-      try {
-        await device.ptzStop();
-      } catch (_) {}
-      stopTimers.delete(key);
-    }, durationMs);
-    stopTimers.set(key, timer);
-  }
+  const effectiveDuration = durationMs > 0 ? durationMs : 5000; // Continuous hold auto-stops after 5s max safety limit
+  const timer = setTimeout(async () => {
+    try {
+      await device.ptzStop();
+    } catch (_) {}
+    stopTimers.delete(key);
+  }, effectiveDuration);
+  stopTimers.set(key, timer);
 
   return { ok: true, direction: dir, speed: sp };
 }

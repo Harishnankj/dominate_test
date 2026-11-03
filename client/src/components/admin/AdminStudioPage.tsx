@@ -48,6 +48,7 @@ import type { Device, DeviceType, Floor, Room, HaHub, IrProfile, Camera, Automat
 export type AdminStudioTabType =
   | 'hubs'
   | 'z2m'
+  | 'tuya'
   | 'floors'
   | 'cameras'
   | 'ttlock'
@@ -255,6 +256,151 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
     try {
       await ApiService.setZ2mDeviceState(friendlyName, { state: 'TOGGLE' });
       showStatus(`Toggled ${friendlyName}`);
+    } catch (err: any) {
+      showStatus(err.message, true);
+    }
+  };
+
+  // Tuya & Direct Wi-Fi State
+  const [tuyaEnabled, setTuyaEnabled] = useState(data?.config?.tuya_enabled === 1);
+  const [tuyaAccessId, setTuyaAccessId] = useState(data?.config?.tuya_access_id || '');
+  const [tuyaAccessSecret, setTuyaAccessSecret] = useState('');
+  const [tuyaRegion, setTuyaRegion] = useState(data?.config?.tuya_region || 'in');
+  const [tuyaUid, setTuyaUid] = useState(data?.config?.tuya_uid || '');
+  const [tuyaStatusData, setTuyaStatusData] = useState<import('../../types').TuyaStatus | null>(null);
+  const [tuyaDevicesList, setTuyaDevicesList] = useState<import('../../types').TuyaDevice[]>([]);
+  const [loadingTuya, setLoadingTuya] = useState(false);
+  const [savingTuyaConfig, setSavingTuyaConfig] = useState(false);
+  const [syncingTuyaCloud, setSyncingTuyaCloud] = useState(false);
+  const [autoImportingTuya, setAutoImportingTuya] = useState(false);
+
+  // Manual Tuya Device Modal
+  const [manualTuyaModalOpen, setManualTuyaModalOpen] = useState(false);
+  const [manualTuyaName, setManualTuyaName] = useState('');
+  const [manualTuyaId, setManualTuyaId] = useState('');
+  const [manualTuyaKey, setManualTuyaKey] = useState('');
+  const [manualTuyaIp, setManualTuyaIp] = useState('');
+  const [manualTuyaType, setManualTuyaType] = useState('switch_light');
+  const [manualTuyaRoomId, setManualTuyaRoomId] = useState('');
+
+  const fetchTuyaInfo = React.useCallback(async () => {
+    setLoadingTuya(true);
+    try {
+      const [statusRes, devicesRes] = await Promise.all([
+        ApiService.getTuyaStatus().catch(() => null),
+        ApiService.getTuyaDevices().catch(() => null),
+      ]);
+      if (statusRes?.ok) {
+        setTuyaStatusData(statusRes.status);
+        if (statusRes.status.access_id) setTuyaAccessId(statusRes.status.access_id);
+        if (statusRes.status.region) setTuyaRegion(statusRes.status.region);
+        if (statusRes.status.uid) setTuyaUid(statusRes.status.uid);
+        setTuyaEnabled(statusRes.status.enabled);
+      }
+      if (devicesRes?.ok) {
+        setTuyaDevicesList(devicesRes.devices || []);
+      }
+    } catch (_) {}
+    setLoadingTuya(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (activeTab === 'tuya') {
+      fetchTuyaInfo();
+    }
+  }, [activeTab, fetchTuyaInfo]);
+
+  const handleSaveTuyaConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingTuyaConfig(true);
+    try {
+      const res = await ApiService.updateTuyaConfig({
+        enabled: tuyaEnabled,
+        accessId: tuyaAccessId,
+        accessSecret: tuyaAccessSecret || undefined,
+        region: tuyaRegion,
+        uid: tuyaUid,
+      });
+      if (res.ok) {
+        setTuyaStatusData(res.status);
+        showStatus('Tuya & Wi-Fi settings saved successfully');
+        await refreshBootstrap();
+        fetchTuyaInfo();
+      }
+    } catch (err: any) {
+      showStatus(err.message, true);
+    } finally {
+      setSavingTuyaConfig(false);
+    }
+  };
+
+  const handleSyncTuyaCloud = async () => {
+    setSyncingTuyaCloud(true);
+    try {
+      const res = await ApiService.syncTuyaCloud();
+      if (res.ok) {
+        setTuyaDevicesList(res.devices || []);
+        showStatus(`Synchronized ${res.count} devices from Smart Life`);
+        fetchTuyaInfo();
+      }
+    } catch (err: any) {
+      showStatus(err.message, true);
+    } finally {
+      setSyncingTuyaCloud(false);
+    }
+  };
+
+  const handleAutoImportTuya = async () => {
+    setAutoImportingTuya(true);
+    try {
+      const res = await ApiService.autoImportTuyaDevices();
+      if (res.ok) {
+        showStatus(`Imported ${res.imported} new Wi-Fi devices into rooms`);
+        await refreshBootstrap();
+        fetchTuyaInfo();
+      } else {
+        showStatus('Auto-import completed with no new devices');
+      }
+    } catch (err: any) {
+      showStatus(err.message, true);
+    } finally {
+      setAutoImportingTuya(false);
+    }
+  };
+
+  const handleTestTuyaToggle = async (deviceId: string, currentOn: boolean) => {
+    try {
+      await ApiService.setTuyaDeviceState(deviceId, { switch_1: !currentOn, state: !currentOn ? 'ON' : 'OFF' });
+      showStatus(`Toggled device ${deviceId}`);
+      fetchTuyaInfo();
+    } catch (err: any) {
+      showStatus(err.message, true);
+    }
+  };
+
+  const handleSaveManualTuya = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualTuyaName || !manualTuyaId || !manualTuyaRoomId) {
+      showStatus('Name, Device ID, and Room are required', true);
+      return;
+    }
+    try {
+      await ApiService.addManualTuyaDevice({
+        name: manualTuyaName,
+        tuya_device_id: manualTuyaId,
+        tuya_local_key: manualTuyaKey,
+        tuya_ip: manualTuyaIp,
+        type: manualTuyaType,
+        room_id: manualTuyaRoomId,
+      });
+      showStatus(`Added direct Wi-Fi device: ${manualTuyaName}`);
+      setManualTuyaModalOpen(false);
+      setManualTuyaName('');
+      setManualTuyaId('');
+      setManualTuyaKey('');
+      setManualTuyaIp('');
+      await refreshBootstrap();
+      fetchTuyaInfo();
     } catch (err: any) {
       showStatus(err.message, true);
     }
@@ -808,6 +954,7 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
           {[
             { id: 'hubs', label: 'Home Assistant Hubs', icon: Server },
             { id: 'z2m', label: 'Zigbee2MQTT (Direct)', icon: Radio },
+            { id: 'tuya', label: 'Tuya & Wi-Fi (Direct)', icon: Wifi },
             { id: 'floors', label: 'Floors & Rooms & Devices', icon: Layers },
             { id: 'cameras', label: 'CCTV & Go2RTC', icon: Video },
             { id: 'ttlock', label: 'TTLock & HR Biometrics', icon: Lock },
@@ -1151,19 +1298,57 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                   </label>
                 </div>
 
+                {/* Quick Auto-Fill Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-mono text-slate-400">Quick Connect:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setZ2mBrokerUrl('mqtt://192.168.0.180:1883');
+                      setZ2mEnabled(true);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 text-[11px] font-mono flex items-center gap-1 transition-all"
+                  >
+                    <Radio className="w-3 h-3 text-cyan-400" /> DOM Connect (192.168.0.180:1883)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setZ2mBrokerUrl('mqtt://127.0.0.1:1883');
+                      setZ2mEnabled(true);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-white/10 text-[11px] font-mono flex items-center gap-1 transition-all"
+                  >
+                    Localhost (127.0.0.1:1883)
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                      Broker URL (e.g. mqtt://127.0.0.1:1883)
+                      Broker URL (e.g. mqtt://192.168.0.180:1883)
                     </label>
                     <input
                       type="text"
                       required
                       value={z2mBrokerUrl}
-                      onChange={(e) => setZ2mBrokerUrl(e.target.value)}
-                      placeholder="mqtt://127.0.0.1:1883"
+                      onChange={(e) => {
+                        let val = e.target.value;
+                        // Auto-correct common web dashboard port 8085/8080 to mqtt port 1883
+                        if (val.includes(':8085') || val.includes(':8080')) {
+                          val = val.replace(/^https?:\/\//i, 'mqtt://').replace(/:808[0-9]/, ':1883');
+                        } else if (val.startsWith('http://') || val.startsWith('https://')) {
+                          val = val.replace(/^https?:\/\//i, 'mqtt://');
+                        }
+                        setZ2mBrokerUrl(val);
+                        setZ2mEnabled(true);
+                      }}
+                      placeholder="mqtt://192.168.0.180:1883"
                       className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
                     />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Note: Web UI is port 8085, MQTT broker is port 1883.
+                    </span>
                   </div>
 
                   <div>
@@ -1188,7 +1373,7 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                       type="text"
                       value={z2mUsername}
                       onChange={(e) => setZ2mUsername(e.target.value)}
-                      placeholder="mosquitto_user"
+                      placeholder="Leave blank if no auth"
                       className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
                     />
                   </div>
@@ -1338,6 +1523,302 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                               </button>
                             </div>
                           )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: Tuya & Direct Wi-Fi Connection */}
+          {activeTab === 'tuya' && (
+            <div className="space-y-6">
+              {/* Top Action Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Wifi className="w-5 h-5 text-amber-400" /> Tuya & Direct Wi-Fi Hub
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Local LAN (port 6668) & Tuya Cloud OpenAPI connection for Smart Life devices with zero HA dependency
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={handleSyncTuyaCloud}
+                    disabled={syncingTuyaCloud || !tuyaAccessId}
+                    className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${syncingTuyaCloud ? 'animate-spin' : ''}`} />
+                    {syncingTuyaCloud ? 'Syncing...' : 'Sync from Smart Life'}
+                  </button>
+
+                  <button
+                    onClick={handleAutoImportTuya}
+                    disabled={autoImportingTuya || tuyaDevicesList.length === 0}
+                    className="px-3.5 py-2 rounded-xl bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 text-xs font-bold border border-amber-500/30 flex items-center gap-1.5 transition-all disabled:opacity-50"
+                  >
+                    <Plus className="w-4 h-4" />
+                    {autoImportingTuya ? 'Importing...' : '1-Click Auto-Import All'}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setManualTuyaRoomId(data?.rooms?.[0]?.id || '');
+                      setManualTuyaModalOpen(true);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 flex items-center gap-1.5 transition-all"
+                  >
+                    <Plus className="w-4 h-4" /> Add Standalone Device
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Metrics Bar */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="glass-panel p-4 rounded-xl border border-white/10 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">Cloud Link</span>
+                    <span
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
+                        tuyaStatusData?.cloud_connected
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                      }`}
+                    >
+                      {tuyaStatusData?.cloud_connected ? 'CONNECTED' : 'DISCONNECTED'}
+                    </span>
+                  </div>
+                  <div className="text-sm font-bold text-white font-mono truncate">
+                    {tuyaRegion.toUpperCase()} ({tuyaStatusData?.endpoint ? new URL(tuyaStatusData.endpoint).hostname : 'Not Set'})
+                  </div>
+                </div>
+
+                <div className="glass-panel p-4 rounded-xl border border-white/10 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">Direct Local LAN</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      &lt; 15ms LAN
+                    </span>
+                  </div>
+                  <div className="text-sm font-bold text-white font-mono">
+                    {tuyaStatusData?.local_online_count || 0} Local LAN Online
+                  </div>
+                </div>
+
+                <div className="glass-panel p-4 rounded-xl border border-white/10 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">Discovered Devices</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase bg-slate-800 text-slate-300">
+                      TOTAL
+                    </span>
+                  </div>
+                  <div className="text-sm font-bold text-cyan-400 font-mono">
+                    {tuyaDevicesList.length} Smart Life / Wi-Fi
+                  </div>
+                </div>
+              </div>
+
+              {/* Tuya Cloud Credentials Form */}
+              <form onSubmit={handleSaveTuyaConfig} className="glass-panel p-4 rounded-2xl border border-white/10 space-y-4">
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Wifi className="w-4 h-4 text-amber-400" />
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">Tuya Cloud & Smart Life Integration Settings</h4>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={tuyaEnabled}
+                      onChange={(e) => setTuyaEnabled(e.target.checked)}
+                      className="rounded bg-slate-900 border-white/20 text-amber-500 focus:ring-0"
+                    />
+                    <span className="text-xs font-semibold text-slate-300">Enable Tuya Engine</span>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Data Center Region
+                    </label>
+                    <select
+                      value={tuyaRegion}
+                      onChange={(e) => setTuyaRegion(e.target.value)}
+                      className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                    >
+                      <option value="in">India / Central (openapi.tuyain.com)</option>
+                      <option value="us">Western America (openapi.tuyaus.com)</option>
+                      <option value="eu">Europe (openapi.tuyaeu.com)</option>
+                      <option value="cn">China (openapi.tuyacn.com)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Access ID / Client ID
+                    </label>
+                    <input
+                      type="text"
+                      value={tuyaAccessId}
+                      onChange={(e) => setTuyaAccessId(e.target.value)}
+                      placeholder="e.g. 5x7f9a2b8c..."
+                      className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Access Secret / Client Secret
+                    </label>
+                    <input
+                      type="password"
+                      value={tuyaAccessSecret}
+                      onChange={(e) => setTuyaAccessSecret(e.target.value)}
+                      placeholder="Leave blank to keep existing"
+                      className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Smart Life User ID (UID) <span className="text-slate-500 font-normal">(Optional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={tuyaUid}
+                      onChange={(e) => setTuyaUid(e.target.value)}
+                      placeholder="e.g. in16928374..."
+                      className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Helpful Setup Guide Box */}
+                {tuyaDevicesList.length === 0 && (
+                  <div className="bg-amber-950/20 border border-amber-500/30 rounded-xl p-3.5 text-xs text-amber-200 space-y-2">
+                    <div className="font-bold flex items-center gap-1.5 text-amber-300">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      Connected to Tuya Cloud! To populate your devices here, verify these 2 steps on iot.tuya.com:
+                    </div>
+                    <ol className="list-decimal list-inside space-y-1.5 text-slate-300 leading-relaxed text-[11px] pl-1">
+                      <li>
+                        <strong className="text-white">Link your Smart Life App</strong>: Open your Cloud project on <a href="https://iot.tuya.com" target="_blank" rel="noreferrer" className="text-amber-400 underline font-semibold">iot.tuya.com</a> &gt; go to <span className="text-amber-300 font-mono">Devices &gt; Link Tuya App Account</span> &gt; click <strong>Add App Account</strong>. Scan the QR code using your phone’s Smart Life app (tap <strong>Me</strong> in bottom right, then the <strong>[-]</strong> scan icon in top right) and select <strong>Read, Write and Manage permissions</strong>.
+                      </li>
+                      <li>
+                        <strong className="text-white">Authorize API Services</strong>: Go to the <span className="text-amber-300 font-mono">Service API</span> tab in your Tuya project and make sure <span className="text-white font-semibold">IoT Core</span> and <span className="text-white font-semibold">Smart Home Device System</span> are added (both are free).
+                      </li>
+                    </ol>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                  <p className="text-[11px] text-slate-400 leading-relaxed max-w-xl">
+                    Once your Smart Life app is linked on <a href="https://iot.tuya.com" target="_blank" rel="noreferrer" className="text-amber-400 hover:underline">iot.tuya.com</a>, click <strong>Save &amp; Connect</strong>, then click <strong>Sync from Smart Life</strong> at the top to discover all devices.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={savingTuyaConfig}
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-bold text-xs shadow-glow flex items-center gap-1.5 transition-all shrink-0"
+                  >
+                    {savingTuyaConfig ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+                    Save &amp; Connect
+                  </button>
+                </div>
+              </form>
+
+              {/* Discovered Wi-Fi Devices */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Wifi className="w-4 h-4 text-amber-400" /> Discovered Smart Life / Wi-Fi Devices ({tuyaDevicesList.length})
+                  </h4>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    Synchronized from Smart Life Cloud &amp; Local LAN UDP Beacon (Port 6666)
+                  </span>
+                </div>
+
+                {tuyaDevicesList.length === 0 ? (
+                  <div className="glass-panel p-8 rounded-2xl border border-dashed border-white/10 text-center space-y-3">
+                    <Wifi className="w-10 h-10 text-amber-400/40 mx-auto" />
+                    <h5 className="text-sm font-bold text-white">No Tuya Wi-Fi Devices Discovered Yet</h5>
+                    <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                      Enter your Tuya Access ID &amp; Secret above and click <strong>Sync from Smart Life</strong> to import all your paired Wi-Fi switches, plugs, dimmers, and breakers automatically.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {tuyaDevicesList.map((dev) => {
+                      const isOn = dev.status?.switch_1 === true || dev.status?.state === 'ON';
+                      return (
+                        <div key={dev.id} className="glass-panel p-3.5 rounded-xl border border-white/10 space-y-2.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <h5 className="text-xs font-bold text-white leading-tight">{dev.name}</h5>
+                                <span className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold ${
+                                  dev.is_local
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                    : dev.online
+                                    ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+                                    : 'bg-slate-800 text-slate-500'
+                                }`}>
+                                  {dev.is_local ? 'LOCAL LAN' : dev.online ? 'CLOUD ONLINE' : 'OFFLINE'}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-400 font-mono">
+                                ID: {dev.id} • Category: <span className="text-amber-400 uppercase">{dev.category}</span>
+                              </p>
+                            </div>
+                            <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
+                              {dev.ip ? dev.ip : 'Auto-LAN'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] font-mono bg-slate-900/60 p-2 rounded-lg text-slate-300">
+                            <span>Key: {dev.local_key ? '✓ Available (LAN Encrypted)' : 'Cloud Controlled'}</span>
+                            <span>Version: v{dev.protocol_version || '3.3'}</span>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-2 pt-1 border-t border-white/5">
+                            <button
+                              type="button"
+                              onClick={() => handleTestTuyaToggle(dev.id, isOn)}
+                              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] font-semibold transition-colors flex items-center gap-1"
+                            >
+                              <RefreshCw className="w-3 h-3" /> Test Toggle
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const targetRoom = data?.rooms?.[0];
+                                setEditingDevice({
+                                  id: '',
+                                  room_id: targetRoom?.id || '',
+                                  type: (dev.category.includes('dj') || dev.category.includes('light')) ? 'dimmable_light' : 'switch_light',
+                                  name: dev.name,
+                                  tuya_device_id: dev.id,
+                                  tuya_local_key: dev.local_key || '',
+                                  tuya_ip: dev.ip || '',
+                                  config_json: JSON.stringify({
+                                    tuya_device_id: dev.id,
+                                    category: dev.category,
+                                    local_key: dev.local_key,
+                                  }),
+                                  show_on_default_dashboard: 0,
+                                  sort_order: 0,
+                                } as Device);
+                                setDeviceModalOpen(true);
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-colors"
+                            >
+                              Map to Room
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -2788,11 +3269,36 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                   type="text"
                   placeholder="rtsp://admin:pass@192.168.0.100:554/Streaming/Channels/102"
                   value={editingCamera.rtsp_sub_url || ''}
-                  onChange={(e) => setEditingCamera({ ...editingCamera, rtsp_sub_url: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const ipMatch = val.match(/@?([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})/);
+                    const ip = ipMatch ? ipMatch[1] : null;
+                    const nextOnvif = !editingCamera.onvif_url && ip ? `http://${ip}:8000/onvif/device_service` : editingCamera.onvif_url;
+                    const nextUser = !editingCamera.onvif_user ? 'admin' : editingCamera.onvif_user;
+                    setEditingCamera({
+                      ...editingCamera,
+                      rtsp_sub_url: val,
+                      onvif_url: nextOnvif,
+                      onvif_user: nextUser,
+                    });
+                  }}
                   className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-slate-200"
                 />
+                {editingCamera.rtsp_sub_url?.includes('channel0') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = editingCamera.rtsp_sub_url!.replace('channel0', 'channel1');
+                      setEditingCamera({ ...editingCamera, rtsp_sub_url: updated });
+                      showStatus('Switched to channel1 for zero-latency WebRTC');
+                    }}
+                    className="mt-1 px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-mono flex items-center gap-1 hover:bg-amber-500/30 transition-all"
+                  >
+                    ⚡ channel0 is high-latency H.265. Click to switch to channel1 (H.264 &lt;100ms Live WebRTC)!
+                  </button>
+                )}
                 <span className="text-[10px] text-slate-400 mt-0.5 block">
-                  Lower resolution stream (e.g. 640x360 / 720p) for smooth simultaneous multi-camera playback.
+                  Lower resolution stream (e.g. 640x360 / 720p H.264) for smooth simultaneous multi-camera playback.
                 </span>
               </div>
 
@@ -2804,7 +3310,19 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                   type="text"
                   placeholder="rtsp://admin:pass@192.168.0.100:554/Streaming/Channels/101"
                   value={editingCamera.rtsp_main_url || ''}
-                  onChange={(e) => setEditingCamera({ ...editingCamera, rtsp_main_url: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const ipMatch = val.match(/@?([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})/);
+                    const ip = ipMatch ? ipMatch[1] : null;
+                    const nextOnvif = !editingCamera.onvif_url && ip ? `http://${ip}:8000/onvif/device_service` : editingCamera.onvif_url;
+                    const nextUser = !editingCamera.onvif_user ? 'admin' : editingCamera.onvif_user;
+                    setEditingCamera({
+                      ...editingCamera,
+                      rtsp_main_url: val,
+                      onvif_url: nextOnvif,
+                      onvif_user: nextUser,
+                    });
+                  }}
                   className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-slate-200"
                 />
               </div>
@@ -2882,19 +3400,73 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
 
                 {editingCamera.ptz_enabled !== 0 && (
                   <div className="space-y-2.5 pt-2 border-t border-white/5">
+                    {/* Guidance Alert Box */}
+                    <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/20 text-[11px] space-y-1.5">
+                      <p className="font-semibold text-cyan-300 flex items-center gap-1.5">
+                        <Compass className="w-3.5 h-3.5 text-cyan-400" /> CP Plus Camera PTZ Setup
+                      </p>
+                      <p className="text-slate-300 text-[10px]">
+                        • <strong>ONVIF Port:</strong> Usually port <strong>8000</strong> (e.g. <code className="text-cyan-300 bg-slate-900/60 px-1 py-0.5 rounded">http://192.168.0.38:8000/onvif/device_service</code>).
+                      </p>
+                      <p className="text-slate-300 text-[10px]">
+                        • <strong>Username:</strong> Default is <code className="text-cyan-300 bg-slate-900/60 px-1 py-0.5 rounded">admin</code>.
+                      </p>
+                      <p className="text-slate-300 text-[10px]">
+                        • <strong>ONVIF Password:</strong> Open your <strong>CP Plus EzyKam+</strong> mobile app &rarr; Camera Settings &rarr; <strong>PC View / ONVIF</strong> to set or view your ONVIF password (or Safety Code from the camera sticker).
+                      </p>
+                    </div>
+
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                        ONVIF Service URL
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-semibold text-slate-300">
+                          ONVIF Service URL
+                        </label>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              showStatus('Probing local network for ONVIF cameras...');
+                              const res = await ApiService.probeOnvif();
+                              if (res.ok && res.devices?.length > 0) {
+                                const found = res.devices[0];
+                                setEditingCamera({
+                                  ...editingCamera,
+                                  onvif_url: found.xaddr,
+                                  name: editingCamera.name || found.name || 'CP Plus Cloud Camera',
+                                });
+                                showStatus(`Discovered ONVIF: ${found.name || found.xaddr}`);
+                              } else {
+                                // If broadcast probe didn't find, auto-suggest based on RTSP URL IP
+                                const ipMatch = editingCamera.rtsp_sub_url?.match(/@?([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})/);
+                                if (ipMatch) {
+                                  setEditingCamera({
+                                    ...editingCamera,
+                                    onvif_url: `http://${ipMatch[1]}:8000/onvif/device_service`,
+                                    onvif_user: editingCamera.onvif_user || 'admin',
+                                  });
+                                  showStatus(`Set ONVIF URL for camera IP ${ipMatch[1]}:8000`);
+                                } else {
+                                  showStatus('No broadcast response. Please paste camera RTSP URL above first.', true);
+                                }
+                              }
+                            } catch (err: any) {
+                              showStatus(`Probe error: ${err.message}`, true);
+                            }
+                          }}
+                          className="px-2 py-0.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-[10px] font-mono border border-cyan-500/30 flex items-center gap-1 transition-all"
+                        >
+                          <Radio className="w-3 h-3 text-cyan-400" /> Auto-Detect ONVIF
+                        </button>
+                      </div>
                       <input
                         type="text"
-                        placeholder="http://192.168.0.176:2020/onvif/device_service"
+                        placeholder="http://192.168.0.38:8000/onvif/device_service"
                         value={editingCamera.onvif_url || ''}
                         onChange={(e) => setEditingCamera({ ...editingCamera, onvif_url: e.target.value })}
                         className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-slate-200"
                       />
                       <span className="text-[10px] text-slate-400 mt-0.5 block">
-                        Direct ONVIF port (e.g. port 2020 for Tapo, 80/8899 for Hikvision/Dahua).
+                        Direct ONVIF HTTP endpoint (Port 8000 for CP Plus, 2020 for Tapo, 80/8899 for Dahua/Hikvision).
                       </span>
                     </div>
 
@@ -2996,6 +3568,118 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
         initialProfile={editingIrProfile}
         onSaved={refreshBootstrap}
       />
+
+      {/* Standalone Direct Wi-Fi Device Add Modal */}
+      {manualTuyaModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
+          <div className="relative w-full max-w-md glass-panel rounded-3xl p-6 border border-white/20 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Wifi className="w-5 h-5 text-amber-400" />
+                <h3 className="text-base font-bold text-white">Add Standalone Wi-Fi Device</h3>
+              </div>
+              <button
+                onClick={() => setManualTuyaModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveManualTuya} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Device Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Master Bedroom Light"
+                  value={manualTuyaName}
+                  onChange={(e) => setManualTuyaName(e.target.value)}
+                  className="w-full glass-input rounded-xl px-3 py-2 text-xs text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Room Assignment</label>
+                <select
+                  value={manualTuyaRoomId}
+                  onChange={(e) => setManualTuyaRoomId(e.target.value)}
+                  className="w-full glass-input rounded-xl px-3 py-2 text-xs text-white"
+                >
+                  {(data?.rooms || []).map((r) => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Device Type</label>
+                <select
+                  value={manualTuyaType}
+                  onChange={(e) => setManualTuyaType(e.target.value)}
+                  className="w-full glass-input rounded-xl px-3 py-2 text-xs text-white"
+                >
+                  <option value="switch_light">Switch / Relay</option>
+                  <option value="dimmable_light">Dimmable Light</option>
+                  <option value="energy_meter">Energy Monitor / Breaker</option>
+                  <option value="blinds_relay">Motorized Blinds / Curtain</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Tuya Device ID (devId)</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. bf810398f82a92b1"
+                  value={manualTuyaId}
+                  onChange={(e) => setManualTuyaId(e.target.value)}
+                  className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Local Key (16 chars)</label>
+                  <input
+                    type="text"
+                    placeholder="Optional for LAN"
+                    value={manualTuyaKey}
+                    onChange={(e) => setManualTuyaKey(e.target.value)}
+                    className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Local LAN IP</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 192.168.0.50"
+                    value={manualTuyaIp}
+                    onChange={(e) => setManualTuyaIp(e.target.value)}
+                    className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setManualTuyaModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-glow"
+                >
+                  Add Device
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Discovered Entities Browser Modal */}
       {browsingHub && (

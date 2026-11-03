@@ -13,7 +13,14 @@ import { SwitchLightTile } from '../components/devices/SwitchLightTile';
 import { AcIrTile } from '../components/devices/AcIrTile';
 import { ClimateTile, CoverTile } from '../components/devices/ClimateTile';
 import { BlindsRelayTile } from '../components/devices/BlindsRelayTile';
-import { PresenceSensorTile, ExhaustFanTile, TtlockTile } from '../components/devices/SpecialtyTiles';
+import {
+  PresenceSensorTile,
+  ExhaustFanTile,
+  TtlockTile,
+  EnvironmentalSensorTile,
+  EnergyMeterTile,
+  SmartKnobTile,
+} from '../components/devices/SpecialtyTiles';
 
 interface DynamicRoomPageProps {
   room: Room;
@@ -114,6 +121,12 @@ export const DynamicRoomPage: React.FC<DynamicRoomPageProps> = ({ room, onBack, 
                 return <ExhaustFanTile key={device.id} device={device} />;
               case 'ttlock':
                 return <TtlockTile key={device.id} device={device} />;
+              case 'environmental_sensor':
+                return <EnvironmentalSensorTile key={device.id} device={device} />;
+              case 'energy_meter':
+                return <EnergyMeterTile key={device.id} device={device} />;
+              case 'smart_knob':
+                return <SmartKnobTile key={device.id} device={device} />;
               default:
                 return <SwitchLightTile key={device.id} device={device} />;
             }

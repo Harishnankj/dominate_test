@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Search, Check, Cpu, Plus, Sparkles, Sliders, Radio, SunMedium, Flame, Percent, Zap, SlidersHorizontal, Palette, Signal } from 'lucide-react';
+import { X, Search, Check, Cpu, Plus, Sparkles, Sliders, Radio, SunMedium, Flame, Percent, Zap, SlidersHorizontal, Palette, Signal, Wifi } from 'lucide-react';
 import type { Device, DeviceType, HaHub, IrProfile, Room } from '../../types';
 import { ApiService } from '../../services/api';
 import { DIMMABLE_LIGHT_CONTROLS, DEFAULT_ENABLED_LIGHT_CONTROLS } from '../devices/deviceControlConfigs';
@@ -33,6 +33,9 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
   const [name, setName] = useState(initialDevice?.name || '');
   const [selectedEntityId, setSelectedEntityId] = useState(initialDevice?.entity_id || '');
   const [z2mFriendlyName, setZ2mFriendlyName] = useState(initialDevice?.z2m_friendly_name || '');
+  const [tuyaDeviceId, setTuyaDeviceId] = useState(initialDevice?.tuya_device_id || '');
+  const [tuyaLocalKey, setTuyaLocalKey] = useState(initialDevice?.tuya_local_key || '');
+  const [tuyaIp, setTuyaIp] = useState(initialDevice?.tuya_ip || '');
   const [showOnDashboard, setShowOnDashboard] = useState(initialDevice?.show_on_default_dashboard === 1);
 
   // Config fields
@@ -57,6 +60,9 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
       setName(initialDevice.name);
       setSelectedEntityId(initialDevice.entity_id || '');
       setZ2mFriendlyName(initialDevice.z2m_friendly_name || '');
+      setTuyaDeviceId(initialDevice.tuya_device_id || '');
+      setTuyaLocalKey(initialDevice.tuya_local_key || '');
+      setTuyaIp(initialDevice.tuya_ip || '');
       setShowOnDashboard(initialDevice.show_on_default_dashboard === 1);
 
       try {
@@ -72,7 +78,7 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
         if (cfg.down_entity_id) setDownEntityId(cfg.down_entity_id);
         if (cfg.travel_ms) setTravelMs(cfg.travel_ms);
         if (cfg.lockId) setLockId(cfg.lockId);
-      } catch (_) {}
+      } catch (_) { }
     } else {
       setTargetRoomId(roomId || (rooms[0]?.id || ''));
       setName('');
@@ -161,6 +167,9 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
       subtitle: deviceType,
       entity_id: selectedEntityId || null,
       z2m_friendly_name: z2mFriendlyName.trim() || null,
+      tuya_device_id: tuyaDeviceId.trim() || null,
+      tuya_local_key: tuyaLocalKey.trim() || null,
+      tuya_ip: tuyaIp.trim() || null,
       config_json: JSON.stringify(config),
       show_on_default_dashboard: showOnDashboard ? 1 : 0,
     });
@@ -281,11 +290,10 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
                     <div
                       key={ent.entity_id}
                       onClick={() => handleSelectEntity(ent)}
-                      className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-all ${
-                        isSelected
+                      className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-all ${isSelected
                           ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
                           : 'hover:bg-white/5 text-slate-300'
-                      }`}
+                        }`}
                     >
                       <div className="truncate pr-2">
                         <span className="font-semibold block truncate text-white">{ent.friendly_name}</span>
@@ -326,6 +334,51 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
             />
             <p className="text-[10px] text-slate-400 leading-relaxed">
               If Home Assistant goes down, this device continues working seamlessly over local MQTT.
+            </p>
+          </div>
+
+          {/* Direct Tuya & Wi-Fi Parameters */}
+          <div className="bg-slate-900/60 p-3 rounded-xl border border-white/5 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                <Wifi className="w-3.5 h-3.5 text-amber-400" /> Direct Tuya &amp; Wi-Fi Parameters
+              </label>
+              <span className="text-[10px] text-slate-400 font-mono">Optional</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div>
+                <label className="block text-[10px] text-slate-400 mb-0.5">Device ID (devId)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. bf8103..."
+                  value={tuyaDeviceId}
+                  onChange={(e) => setTuyaDeviceId(e.target.value)}
+                  className="w-full glass-input rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-400 mb-0.5">Local Key (16 chars)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. a78f92..."
+                  value={tuyaLocalKey}
+                  onChange={(e) => setTuyaLocalKey(e.target.value)}
+                  className="w-full glass-input rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-400 mb-0.5">Local LAN IP</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 192.168.0.50"
+                  value={tuyaIp}
+                  onChange={(e) => setTuyaIp(e.target.value)}
+                  className="w-full glass-input rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                />
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              Enables direct LAN control over TCP port 6668 with sub-15ms latency and full offline capability without Home Assistant.
             </p>
           </div>
 
@@ -384,11 +437,10 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
                     return (
                       <label
                         key={ctrl.id}
-                        className={`flex items-start gap-2.5 p-2 rounded-xl border cursor-pointer select-none transition-all ${
-                          isChecked
+                        className={`flex items-start gap-2.5 p-2 rounded-xl border cursor-pointer select-none transition-all ${isChecked
                             ? 'bg-slate-800 border-cyan-500/40 text-white'
                             : 'bg-slate-950/40 border-white/5 text-slate-400 hover:bg-slate-800/40'
-                        }`}
+                          }`}
                       >
                         <input
                           type="checkbox"

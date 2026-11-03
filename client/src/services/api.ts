@@ -166,6 +166,10 @@ export class ApiService {
     });
   }
 
+  static async probeOnvif(): Promise<{ ok: boolean; count: number; devices: Array<{ name: string; xaddr: string; scopes?: string[] }> }> {
+    return this.request('/api/admin/cameras/probe-onvif', { method: 'POST' });
+  }
+
   // IR Profiles
   static async fetchIrProfiles(): Promise<{ ok: boolean; profiles: IrProfile[] }> {
     return this.request('/api/admin/ir-profiles');
@@ -233,19 +237,6 @@ export class ApiService {
       method: 'POST',
       body: JSON.stringify({ state }),
     });
-  }
-
-  // Attendance
-  static async fetchAttendance(): Promise<{ ok: boolean; logs: any[] }> {
-    return this.request('/api/hr/attendance');
-  }
-
-  static async punchAttendance(data: { employeeId: string; employeeName: string; department?: string; type: 'IN' | 'OUT' }): Promise<any> {
-    return this.request('/api/hr/punch', { method: 'POST', body: JSON.stringify(data) });
-  }
-
-  static async uploadAttendanceBatch(content: string, format: 'csv' | 'json'): Promise<any> {
-    return this.request('/api/hr/batch-upload', { method: 'POST', body: JSON.stringify({ content, format }) });
   }
 
   // Misc
@@ -319,6 +310,60 @@ export class ApiService {
     return this.request('/api/z2m/auto-import', {
       method: 'POST',
       body: JSON.stringify({ floorId, roomId }),
+    });
+  }
+
+  // Tuya & Direct Wi-Fi Hub
+  static async getTuyaStatus(): Promise<{ ok: boolean; status: import('../types').TuyaStatus; states: Record<string, any> }> {
+    return this.request('/api/tuya/status');
+  }
+
+  static async getTuyaDevices(): Promise<{ ok: boolean; count: number; devices: import('../types').TuyaDevice[] }> {
+    return this.request('/api/tuya/devices');
+  }
+
+  static async syncTuyaCloud(): Promise<{ ok: boolean; count: number; devices: import('../types').TuyaDevice[] }> {
+    return this.request('/api/tuya/sync', { method: 'POST' });
+  }
+
+  static async setTuyaDeviceState(deviceId: string, state: Record<string, any>): Promise<{ ok: boolean }> {
+    return this.request('/api/tuya/set', {
+      method: 'POST',
+      body: JSON.stringify({ device_id: deviceId, state }),
+    });
+  }
+
+  static async updateTuyaConfig(data: {
+    enabled: boolean;
+    accessId: string;
+    accessSecret?: string;
+    region: string;
+    uid?: string;
+  }): Promise<{ ok: boolean; status: import('../types').TuyaStatus }> {
+    return this.request('/api/tuya/config', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  static async autoImportTuyaDevices(floorId?: string, roomId?: string): Promise<{ ok: boolean; imported: number; totalDiscovered?: number }> {
+    return this.request('/api/tuya/auto-import', {
+      method: 'POST',
+      body: JSON.stringify({ floorId, roomId }),
+    });
+  }
+
+  static async addManualTuyaDevice(data: {
+    name: string;
+    tuya_device_id: string;
+    tuya_local_key?: string;
+    tuya_ip?: string;
+    type?: string;
+    room_id: string;
+  }): Promise<{ ok: boolean; id: string }> {
+    return this.request('/api/tuya/devices/manual', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   }
 }

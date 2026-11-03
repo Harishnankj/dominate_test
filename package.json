@@ -4,14 +4,14 @@
   "private": true,
   "description": "100% Dynamic, User-Configurable, Self-Hosted (Local-First) Smart Office & Building OS",
   "scripts": {
-    "dev:server": "cd server && npm run dev",
-    "dev:client": "cd client && npm run dev",
+    "dev:server": "cd server && npm.cmd run dev",
+    "dev:client": "cd client && npm.cmd run dev",
     "dev:go2rtc": "bin\\go2rtc.exe -config server\\go2rtc.yaml",
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\" \"npm run dev:go2rtc\"",
-    "build:server": "cd server && npm run build",
-    "build:client": "cd client && npm run build",
-    "build": "npm run build:server && npm run build:client",
-    "start": "cd server && npm start",
+    "dev": "concurrently --restart-tries -1 --restart-after 2000 \"npm.cmd run dev:server\" \"npm.cmd run dev:client\" \"npm.cmd run dev:go2rtc\"",
+    "build:server": "cd server && npm.cmd run build",
+    "build:client": "cd client && npm.cmd run build",
+    "build": "npm.cmd run build:server && npm.cmd run build:client",
+    "start": "cd server && npm.cmd start",
     "docker:up": "docker compose up -d"
   },
   "devDependencies": {

@@ -78,6 +78,21 @@ export function initDatabase() {
   try {
     const deviceCols = (db.prepare('PRAGMA table_info(devices)').all() as any[]).map((c) => c.name);
     if (!deviceCols.includes('z2m_friendly_name')) db.exec('ALTER TABLE devices ADD COLUMN z2m_friendly_name TEXT;');
+    if (!deviceCols.includes('tuya_device_id')) db.exec('ALTER TABLE devices ADD COLUMN tuya_device_id TEXT;');
+    if (!deviceCols.includes('tuya_local_key')) db.exec('ALTER TABLE devices ADD COLUMN tuya_local_key TEXT;');
+    if (!deviceCols.includes('tuya_ip')) db.exec('ALTER TABLE devices ADD COLUMN tuya_ip TEXT;');
+    if (!deviceCols.includes('tuya_protocol_version')) db.exec("ALTER TABLE devices ADD COLUMN tuya_protocol_version TEXT DEFAULT '3.3';");
+  } catch (_) {}
+
+  // Schema migrations for building_config (Tuya & Wi-Fi columns)
+  try {
+    const configCols = (db.prepare('PRAGMA table_info(building_config)').all() as any[]).map((c) => c.name);
+    if (!configCols.includes('tuya_enabled')) db.exec('ALTER TABLE building_config ADD COLUMN tuya_enabled INTEGER DEFAULT 0;');
+    if (!configCols.includes('tuya_access_id')) db.exec("ALTER TABLE building_config ADD COLUMN tuya_access_id TEXT DEFAULT '';");
+    if (!configCols.includes('tuya_access_secret')) db.exec("ALTER TABLE building_config ADD COLUMN tuya_access_secret TEXT DEFAULT '';");
+    if (!configCols.includes('tuya_region')) db.exec("ALTER TABLE building_config ADD COLUMN tuya_region TEXT DEFAULT 'in';");
+    if (!configCols.includes('tuya_endpoint')) db.exec("ALTER TABLE building_config ADD COLUMN tuya_endpoint TEXT DEFAULT 'https://openapi.tuyain.com';");
+    if (!configCols.includes('tuya_uid')) db.exec("ALTER TABLE building_config ADD COLUMN tuya_uid TEXT DEFAULT '';");
   } catch (_) {}
 
   // Ensure building_config row 1 exists in a fresh, unconfigured state (setup_completed = 0)

@@ -403,7 +403,7 @@ router.delete('/rooms/:id', (req, res) => {
 // Devices CRUD
 router.post('/devices', (req, res) => {
   try {
-    const { room_id, ha_hub_id, type, name, subtitle, entity_id, z2m_friendly_name, config, config_json, show_on_default_dashboard, sort_order } = req.body;
+    const { room_id, ha_hub_id, type, name, subtitle, entity_id, z2m_friendly_name, tuya_device_id, tuya_local_key, tuya_ip, config, config_json, show_on_default_dashboard, sort_order } = req.body;
     if (!room_id || !type || !name) return res.status(400).json({ error: 'Room, type, and name are required' });
     const id = `dev_${crypto.randomBytes(4).toString('hex')}`;
 
@@ -412,8 +412,8 @@ router.post('/devices', (req, res) => {
       : JSON.stringify(config || {});
 
     db.prepare(`
-      INSERT INTO devices (id, room_id, ha_hub_id, type, name, subtitle, entity_id, z2m_friendly_name, config_json, show_on_default_dashboard, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO devices (id, room_id, ha_hub_id, type, name, subtitle, entity_id, z2m_friendly_name, tuya_device_id, tuya_local_key, tuya_ip, config_json, show_on_default_dashboard, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       room_id,
@@ -423,6 +423,9 @@ router.post('/devices', (req, res) => {
       subtitle || null,
       entity_id || null,
       z2m_friendly_name || null,
+      tuya_device_id || null,
+      tuya_local_key || null,
+      tuya_ip || null,
       finalConfig,
       show_on_default_dashboard ? 1 : 0,
       sort_order || 0
@@ -437,7 +440,7 @@ router.post('/devices', (req, res) => {
 
 router.put('/devices/:id', (req, res) => {
   try {
-    const { room_id, ha_hub_id, type, name, subtitle, entity_id, z2m_friendly_name, config, config_json, show_on_default_dashboard, sort_order } = req.body;
+    const { room_id, ha_hub_id, type, name, subtitle, entity_id, z2m_friendly_name, tuya_device_id, tuya_local_key, tuya_ip, config, config_json, show_on_default_dashboard, sort_order } = req.body;
     
     let finalConfig: string | null = null;
     if (config_json !== undefined) {
@@ -455,6 +458,9 @@ router.put('/devices/:id', (req, res) => {
         subtitle = COALESCE(?, subtitle),
         entity_id = COALESCE(?, entity_id),
         z2m_friendly_name = COALESCE(?, z2m_friendly_name),
+        tuya_device_id = COALESCE(?, tuya_device_id),
+        tuya_local_key = COALESCE(?, tuya_local_key),
+        tuya_ip = COALESCE(?, tuya_ip),
         config_json = COALESCE(?, config_json),
         show_on_default_dashboard = COALESCE(?, show_on_default_dashboard),
         sort_order = COALESCE(?, sort_order)
@@ -467,6 +473,9 @@ router.put('/devices/:id', (req, res) => {
       subtitle,
       entity_id,
       z2m_friendly_name,
+      tuya_device_id,
+      tuya_local_key,
+      tuya_ip,
       finalConfig,
       show_on_default_dashboard !== undefined ? (show_on_default_dashboard ? 1 : 0) : null,
       sort_order,
@@ -657,11 +666,56 @@ router.get('/go2rtc/streams', async (req, res) => {
   }
 });
 
+// Helper: Optimize RTSP URL for zero-latency WebRTC (<100ms) with interleaved TCP
+function optimizeRtspUrl(url?: string | null): string | null {
+  if (!url || !url.trim()) return null;
+  let u = url.trim();
+  if (!u.startsWith('rtsp://')) return u;
+
+  // Cleanly strip any existing fragment or malformed query options
+  const base = u.split('#')[0].split('&backchannel')[0].split('&transport')[0].trim();
+
+  // Always append proper go2rtc hashtags: #tcp#backchannel=0
+  return `${base}#tcp#backchannel=0`;
+}
+
+// Helper: Normalize camera ONVIF endpoint if user entered RTSP URL by mistake
+function normalizeOnvifUrl(onvifUrl?: string | null, rtspUrl?: string | null): string | null {
+  if (onvifUrl && onvifUrl.trim().startsWith('http://')) {
+    return onvifUrl.trim();
+  }
+  const source = onvifUrl || rtspUrl || '';
+  const match = source.match(/^rtsp:\/\/(?:([^:]+):([^@]+)@)?([^:/]+)(?::(\d+))?/);
+  if (match) {
+    const host = match[3];
+    if (host === '192.168.0.38' || source.includes('5543') || source.includes('channel')) {
+      return `http://${host}:8000/onvif/device_service`;
+    }
+    if (host === '192.168.0.39' || source.includes('tapo')) {
+      return `http://192.168.0.176:2020/onvif/device_service`;
+    }
+    return `http://${host}:8000/onvif/device_service`;
+  }
+  return onvifUrl ? onvifUrl.trim() : null;
+}
+
 // Add / Update Camera
 router.post('/cameras', async (req, res) => {
   try {
     const { floor_id, room_id, name, stream_id, full_stream_id, rtsp_sub_url, rtsp_main_url, search_tags, sort_order, onvif_url, onvif_user, onvif_pass, ptz_enabled } = req.body;
     if (!name || !stream_id) return res.status(400).json({ error: 'Name and stream_id are required' });
+
+    let finalSubRtsp = rtsp_sub_url;
+    let finalMainRtsp = rtsp_main_url;
+
+    // Auto-detect dual channel for ultra-low latency: channel1 = H.264 (substream), channel0 = H.265 (mainstream)
+    if (finalMainRtsp?.includes('channel0') && (!finalSubRtsp || finalSubRtsp.includes('channel0'))) {
+      finalSubRtsp = finalMainRtsp.replace('channel0', 'channel1');
+    }
+
+    const cleanSubRtsp = optimizeRtspUrl(finalSubRtsp);
+    const cleanMainRtsp = optimizeRtspUrl(finalMainRtsp);
+    const cleanOnvifUrl = normalizeOnvifUrl(onvif_url, finalMainRtsp || finalSubRtsp);
 
     const id = `cam_${crypto.randomBytes(4).toString('hex')}`;
     db.prepare(`
@@ -674,18 +728,18 @@ router.post('/cameras', async (req, res) => {
       name.trim(),
       stream_id.trim(),
       full_stream_id || `${stream_id.trim()}F`,
-      rtsp_sub_url || null,
-      rtsp_main_url || null,
+      cleanSubRtsp,
+      cleanMainRtsp,
       search_tags || '',
       sort_order || 0,
-      onvif_url || null,
-      onvif_user || null,
+      cleanOnvifUrl,
+      onvif_user || 'admin',
       onvif_pass || null,
       ptz_enabled !== undefined ? (ptz_enabled ? 1 : 0) : 1
     );
 
     // Sync to Go2RTC YAML & live API if RTSP URLs provided
-    await syncCameraToGo2rtc(stream_id.trim(), rtsp_sub_url, full_stream_id || `${stream_id.trim()}F`, rtsp_main_url);
+    await syncCameraToGo2rtc(stream_id.trim(), cleanSubRtsp || undefined, full_stream_id || `${stream_id.trim()}F`, cleanMainRtsp || undefined);
 
     liveSync.broadcast('bootstrap_updated');
     return res.json({ ok: true, id });
@@ -697,6 +751,18 @@ router.post('/cameras', async (req, res) => {
 router.put('/cameras/:id', async (req, res) => {
   try {
     const { floor_id, room_id, name, stream_id, full_stream_id, rtsp_sub_url, rtsp_main_url, search_tags, sort_order, onvif_url, onvif_user, onvif_pass, ptz_enabled } = req.body;
+
+    let finalSubRtsp = rtsp_sub_url;
+    let finalMainRtsp = rtsp_main_url;
+
+    if (finalMainRtsp?.includes('channel0') && (!finalSubRtsp || finalSubRtsp.includes('channel0'))) {
+      finalSubRtsp = finalMainRtsp.replace('channel0', 'channel1');
+    }
+
+    const cleanSubRtsp = optimizeRtspUrl(finalSubRtsp);
+    const cleanMainRtsp = optimizeRtspUrl(finalMainRtsp);
+    const cleanOnvifUrl = normalizeOnvifUrl(onvif_url, finalMainRtsp || finalSubRtsp);
+
     db.prepare(`
       UPDATE cameras SET
         floor_id = COALESCE(?, floor_id),
@@ -719,19 +785,19 @@ router.put('/cameras/:id', async (req, res) => {
       name,
       stream_id,
       full_stream_id,
-      rtsp_sub_url,
-      rtsp_main_url,
+      cleanSubRtsp,
+      cleanMainRtsp,
       search_tags,
       sort_order,
-      onvif_url,
+      cleanOnvifUrl,
       onvif_user,
       onvif_pass,
       ptz_enabled !== undefined ? (ptz_enabled ? 1 : 0) : null,
       req.params.id
     );
 
-    if (stream_id && (rtsp_sub_url || rtsp_main_url)) {
-      await syncCameraToGo2rtc(stream_id, rtsp_sub_url, full_stream_id, rtsp_main_url);
+    if (stream_id && (cleanSubRtsp || cleanMainRtsp)) {
+      await syncCameraToGo2rtc(stream_id, cleanSubRtsp || undefined, full_stream_id, cleanMainRtsp || undefined);
     }
 
     liveSync.broadcast('bootstrap_updated');
@@ -757,6 +823,23 @@ router.delete('/cameras/:id', async (req, res) => {
   }
 });
 
+// Auto-Probe ONVIF Devices on Local Network
+router.post('/cameras/probe-onvif', async (req, res) => {
+  try {
+    const onvifMod = await import('node-onvif');
+    const onvif = (onvifMod.default || onvifMod) as any;
+    const deviceList = await onvif.startProbe();
+    const formatted = (deviceList || []).map((d: any) => ({
+      name: d.name || 'Network Video Camera',
+      xaddr: d.xaddrs?.[0] || '',
+      scopes: d.scopes || [],
+    }));
+    return res.json({ ok: true, count: formatted.length, devices: formatted });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // PTZ Control endpoint
 router.post('/cameras/:id/ptz', async (req, res) => {
   try {
@@ -766,31 +849,20 @@ router.post('/cameras/:id/ptz', async (req, res) => {
     const cam = db.prepare('SELECT * FROM cameras WHERE id = ? OR stream_id = ?').get(id, id) as any;
     if (!cam) return res.status(404).json({ error: 'Camera not found' });
 
-    let xaddr = cam.onvif_url;
-    let user = cam.onvif_user;
-    let pass = cam.onvif_pass;
+    let xaddr = normalizeOnvifUrl(cam.onvif_url, cam.rtsp_main_url || cam.rtsp_sub_url);
+    let user = cam.onvif_user || 'admin';
+    let pass = cam.onvif_pass || '';
 
     if (!xaddr) {
-      const rtsp = cam.rtsp_main_url || cam.rtsp_sub_url || '';
-      const match = rtsp.match(/^rtsp:\/\/(?:([^:]+):([^@]+)@)?([^:/]+)(?::(\d+))?/);
-      if (match) {
-        const u = match[1];
-        const p = match[2];
-        const host = match[3];
-        if (host === '192.168.0.39' || rtsp.includes('tapo')) {
-          xaddr = 'http://192.168.0.176:2020/onvif/device_service';
-          user = user || 'bezlin';
-          pass = pass || '#Kinhah3059';
-        } else {
-          xaddr = `http://${host}:2020/onvif/device_service`;
-          user = user || u;
-          pass = pass || p;
-        }
-      } else {
-        xaddr = 'http://192.168.0.176:2020/onvif/device_service';
-        user = user || 'bezlin';
-        pass = pass || '#Kinhah3059';
-      }
+      return res.status(400).json({
+        error: 'No ONVIF service URL found for this camera. Please set ONVIF URL (e.g. http://192.168.0.38:8000/onvif/device_service) in Admin Studio -> CCTV.'
+      });
+    }
+
+    if (!pass && (xaddr.includes('8000') || xaddr.includes('192.168.0.38'))) {
+      return res.status(400).json({
+        error: 'Camera ONVIF Password Required: Open your CP Plus EzyKam+ app -> Settings -> PC View / ONVIF to view or set the password, then save it in Admin Studio -> CCTV.'
+      });
     }
 
     if (action === 'stop') {
@@ -798,14 +870,23 @@ router.post('/cameras/:id/ptz', async (req, res) => {
       return res.json(result);
     }
 
-    const result = await ptzMove(
-      cam.id,
-      { xaddr, user, pass },
-      direction || 'right',
-      speed !== undefined ? Number(speed) : 0.4,
-      durationMs !== undefined ? Number(durationMs) : 450
-    );
-    return res.json(result);
+    try {
+      const result = await ptzMove(
+        cam.id,
+        { xaddr, user, pass },
+        direction || 'right',
+        speed !== undefined ? Number(speed) : 0.4,
+        durationMs !== undefined ? Number(durationMs) : 450
+      );
+      return res.json(result);
+    } catch (moveErr: any) {
+      if (moveErr.message?.includes('Not Authorized') || moveErr.message?.includes('401') || moveErr.message?.includes('400')) {
+        return res.status(401).json({
+          error: 'ONVIF Authorization Failed: The ONVIF password is missing or incorrect. In your CP Plus EzyKam+ app, go to Settings -> PC View / ONVIF to view or set the password, then enter it in Admin Studio -> CCTV.'
+        });
+      }
+      throw moveErr;
+    }
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
@@ -815,7 +896,7 @@ async function syncCameraToGo2rtc(subStreamId: string, subRtsp?: string, mainStr
   const config = db.prepare('SELECT go2rtc_base_url, go2rtc_config_path FROM building_config WHERE id = 1').get() as any;
   const cfgPath = path.resolve(process.cwd(), config?.go2rtc_config_path || './go2rtc.yaml');
 
-  let parsed: any = { api: { listen: ':1984' }, streams: {} };
+  let parsed: any = { api: { listen: ':1984', origin: '*' }, rtsp: { listen: ':8554' }, webrtc: { listen: ':8555' }, streams: {} };
   if (fs.existsSync(cfgPath)) {
     try {
       parsed = YAML.parse(fs.readFileSync(cfgPath, 'utf8')) || parsed;
@@ -825,14 +906,45 @@ async function syncCameraToGo2rtc(subStreamId: string, subRtsp?: string, mainStr
   parsed.api.origin = '*';
   if (!parsed.streams) parsed.streams = {};
 
-  const effectiveSubRtsp = subRtsp || mainRtsp;
-  const hasDistinctMain = Boolean(subRtsp && mainRtsp && subRtsp.trim() !== mainRtsp.trim());
+  const cleanSub = optimizeRtspUrl(subRtsp);
+  const cleanMain = optimizeRtspUrl(mainRtsp);
+  const effectiveSubRtsp = cleanSub || cleanMain;
+  const hasDistinctMain = Boolean(cleanSub && cleanMain && cleanSub.trim() !== cleanMain.trim());
 
-  if (subStreamId && effectiveSubRtsp) {
-    parsed.streams[subStreamId] = effectiveSubRtsp.trim();
+  // Check if any other camera in SQLite already uses this exact physical RTSP URL
+  let finalSubSrc = effectiveSubRtsp?.trim() || '';
+  if (finalSubSrc && !finalSubSrc.includes('127.0.0.1:8554')) {
+    try {
+      const allCams = db.prepare('SELECT stream_id, rtsp_sub_url, rtsp_main_url FROM cameras WHERE stream_id != ? ORDER BY sort_order ASC, id ASC').all(subStreamId) as any[];
+      for (const c of allCams) {
+        const cSub = optimizeRtspUrl(c.rtsp_sub_url) || optimizeRtspUrl(c.rtsp_main_url);
+        if (cSub && cSub.trim() === finalSubSrc && c.stream_id && c.stream_id.trim() !== subStreamId.trim()) {
+          // Multiplex: re-broadcast from primary stream to avoid choking physical camera hardware
+          finalSubSrc = `rtsp://127.0.0.1:8554/${c.stream_id.trim()}#backchannel=0`;
+          break;
+        }
+      }
+    } catch (_) {}
   }
-  if (hasDistinctMain && mainStreamId && mainRtsp) {
-    parsed.streams[mainStreamId] = mainRtsp.trim();
+
+  if (subStreamId && finalSubSrc) {
+    parsed.streams[subStreamId] = finalSubSrc;
+  }
+  if (hasDistinctMain && mainStreamId && cleanMain) {
+    let finalMainSrc = cleanMain.trim();
+    if (!finalMainSrc.includes('127.0.0.1:8554')) {
+      try {
+        const allCams = db.prepare('SELECT full_stream_id, rtsp_main_url FROM cameras WHERE full_stream_id != ? ORDER BY sort_order ASC, id ASC').all(mainStreamId) as any[];
+        for (const c of allCams) {
+          const cMain = optimizeRtspUrl(c.rtsp_main_url);
+          if (cMain && cMain.trim() === finalMainSrc && c.full_stream_id && c.full_stream_id.trim() !== mainStreamId.trim()) {
+            finalMainSrc = `rtsp://127.0.0.1:8554/${c.full_stream_id.trim()}#backchannel=0`;
+            break;
+          }
+        }
+      } catch (_) {}
+    }
+    parsed.streams[mainStreamId] = finalMainSrc;
   } else if (mainStreamId && !hasDistinctMain) {
     delete parsed.streams[mainStreamId];
   }
@@ -843,11 +955,11 @@ async function syncCameraToGo2rtc(subStreamId: string, subRtsp?: string, mainStr
   if (config?.go2rtc_base_url) {
     try {
       const cleanUrl = config.go2rtc_base_url.replace(/\/+$/, '');
-      if (subStreamId && effectiveSubRtsp) {
-        await fetch(`${cleanUrl}/api/streams?name=${encodeURIComponent(subStreamId)}&src=${encodeURIComponent(effectiveSubRtsp.trim())}`, { method: 'PUT' });
+      if (subStreamId && finalSubSrc) {
+        await fetch(`${cleanUrl}/api/streams?name=${encodeURIComponent(subStreamId)}&src=${encodeURIComponent(finalSubSrc)}`, { method: 'PUT' });
       }
-      if (hasDistinctMain && mainStreamId && mainRtsp) {
-        await fetch(`${cleanUrl}/api/streams?name=${encodeURIComponent(mainStreamId)}&src=${encodeURIComponent(mainRtsp.trim())}`, { method: 'PUT' });
+      if (hasDistinctMain && mainStreamId && cleanMain) {
+        await fetch(`${cleanUrl}/api/streams?name=${encodeURIComponent(mainStreamId)}&src=${encodeURIComponent(parsed.streams[mainStreamId])}`, { method: 'PUT' });
       } else if (mainStreamId && !hasDistinctMain) {
         await fetch(`${cleanUrl}/api/streams?src=${encodeURIComponent(mainStreamId)}`, { method: 'DELETE' });
       }

@@ -14,7 +14,6 @@ import { CCTVPage } from './pages/CCTVPage';
 import { CameraFullscreenPage } from './pages/CameraFullscreenPage';
 import { ScenesPage } from './pages/ScenesPage';
 import { ChatPage } from './pages/ChatPage';
-import { AttendancePanel } from './pages/AttendancePanel';
 import { LockTestingPage } from './pages/LockTestingPage';
 
 import type { Camera, Room } from './types';
@@ -97,6 +96,7 @@ export const App: React.FC = () => {
               <FavoritePage
                 onSelectRoom={(roomId) => setSelectedRoomId(roomId)}
                 onOpenAdmin={() => handleOpenAdmin('hubs')}
+                onNavigateToRooms={() => setCurrentTab('view')}
               />
             )}
 
@@ -120,8 +120,6 @@ export const App: React.FC = () => {
             {currentTab === 'scenes' && (
               <ScenesPage onOpenAdmin={() => handleOpenAdmin('automations')} />
             )}
-
-            {currentTab === 'attendance' && <AttendancePanel />}
 
             {currentTab === 'chat' && (
               <ChatPage onSelectRoom={(roomId) => setSelectedRoomId(roomId)} />

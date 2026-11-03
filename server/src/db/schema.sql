@@ -31,6 +31,12 @@ CREATE TABLE IF NOT EXISTS building_config (
   mqtt_username TEXT DEFAULT '',
   mqtt_password TEXT DEFAULT '',
   mqtt_base_topic TEXT DEFAULT 'zigbee2mqtt',
+  tuya_enabled INTEGER DEFAULT 0,
+  tuya_access_id TEXT DEFAULT '',
+  tuya_access_secret TEXT DEFAULT '',
+  tuya_region TEXT DEFAULT 'in',
+  tuya_endpoint TEXT DEFAULT 'https://openapi.tuyain.com',
+  tuya_uid TEXT DEFAULT '',
   excluded_employee_ids_json TEXT DEFAULT '[]',
   updated_at TEXT
 );
@@ -97,6 +103,11 @@ CREATE TABLE IF NOT EXISTS devices (
   name TEXT NOT NULL,
   subtitle TEXT,
   entity_id TEXT,
+  z2m_friendly_name TEXT,
+  tuya_device_id TEXT,
+  tuya_local_key TEXT,
+  tuya_ip TEXT,
+  tuya_protocol_version TEXT DEFAULT '3.3',
   config_json TEXT DEFAULT '{}',
   show_on_default_dashboard INTEGER DEFAULT 0,
   sort_order INTEGER DEFAULT 0

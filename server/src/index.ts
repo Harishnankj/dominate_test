@@ -16,9 +16,9 @@ import bootstrapRouter from './routes/bootstrap.js';
 import adminRouter from './routes/admin.js';
 import devicesRouter from './routes/devices.js';
 import automationsRouter from './routes/automations.js';
-import hrRouter from './routes/hr.js';
 import miscRouter from './routes/misc.js';
 import z2mRouter from './routes/z2m.js';
+import tuyaRouter from './routes/tuya.js';
 import { mqttService } from './services/mqttService.js';
 
 // 1. Initialize SQLite Database
@@ -42,8 +42,8 @@ app.use('/api/bootstrap', bootstrapRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/devices', devicesRouter);
 app.use('/api/automations', automationsRouter);
-app.use('/api/hr', hrRouter);
 app.use('/api/z2m', z2mRouter);
+app.use('/api/tuya', tuyaRouter);
 app.use('/api', miscRouter);
 
 // 4. Serve Client static bundle in production if available

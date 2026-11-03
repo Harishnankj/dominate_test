@@ -4,13 +4,23 @@ api:
 webrtc:
   listen: :8555
   candidates:
+    - 192.168.0.87:8555
     - 127.0.0.1:8555
     - stun:8555
-preload:
-  cam1:
-  cam2:
 streams:
   cam1:
     - rtsp://192.168.0.39:8554/tapo_main#tcp#backchannel=0
   cam2:
-    - rtsp://192.168.0.38:5543/6e9bac7cd408fad79c9b47eb6624dd97/live/channel1#tcp#backchannel=0
+    - rtsp://192.168.0.38:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel1#tcp#backchannel=0
+  cam2F:
+    - rtsp://192.168.0.38:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel0#tcp#backchannel=0
+  cam3:
+    - rtsp://192.168.0.198:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel1#tcp#backchannel=0
+  cam3F:
+    - rtsp://192.168.0.198:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel0#tcp#backchannel=0
+  cam4:
+    - rtsp://192.168.0.159:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel1#tcp#backchannel=0
+  cam4F:
+    - rtsp://192.168.0.159:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel0#tcp#backchannel=0
+  cam5:
+    - rtsp://admin:brvksn@192.168.0.118:8000:554/Streaming/Channels/102#tcp#backchannel=0

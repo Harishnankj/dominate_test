@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../db/index.js';
 import { getUserFromToken } from './auth.js';
 import { mqttService } from '../services/mqttService.js';
+import { tuyaService } from '../services/tuyaService.js';
 
 const router = Router();
 
@@ -36,12 +37,16 @@ router.get('/', (req, res) => {
     delete safeConfig.ttlock_access_token;
     delete safeConfig.hr_auth_token;
     delete safeConfig.mqtt_password;
+    delete safeConfig.tuya_access_secret;
 
     return res.json({
       config: safeConfig,
       z2m_status: mqttService.getStatus(),
       z2m_devices: mqttService.getDiscoveredDevices(),
       z2m_states: mqttService.getAllDeviceStates(),
+      tuya_status: tuyaService.getStatus(),
+      tuya_devices: tuyaService.getDiscoveredDevices(),
+      tuya_states: tuyaService.getAllDeviceStates(),
       hubs,
       floors,
       rooms,

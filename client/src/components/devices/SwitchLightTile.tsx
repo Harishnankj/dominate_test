@@ -1,5 +1,5 @@
 import React from 'react';
-import { ToggleLeft, ToggleRight, Star, Power, Radio } from 'lucide-react';
+import { ToggleLeft, ToggleRight, Star, Power, Radio, Wifi } from 'lucide-react';
 import type { Device } from '../../types';
 import { useEntity } from '../../context/MultiHubHomeAssistantProvider';
 import { useAuth } from '../../context/AuthContext';
@@ -12,24 +12,41 @@ interface SwitchLightTileProps {
 export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
   const { state: haState, callService } = useEntity(device.entity_id, device.ha_hub_id);
   const { isFavorite, toggleFavorite } = useAuth();
-  const { getZ2mState, setZ2mState } = useBootstrap();
+  const { getZ2mState, setZ2mState, getTuyaState, setTuyaState } = useBootstrap();
 
   let devConfig: any = {};
   try { devConfig = JSON.parse(device.config_json || '{}'); } catch (_) {}
   const z2mName = device.z2m_friendly_name || devConfig.z2m_friendly_name;
   const z2mState = z2mName ? getZ2mState(z2mName) : undefined;
 
-  // Resolve state: HA if available, otherwise direct Zigbee2MQTT
-  const effectiveState =
-    haState !== 'unavailable'
-      ? haState
-      : z2mState?.state
-      ? z2mState.state.toLowerCase()
-      : 'off';
+  const tuyaId = device.tuya_device_id || devConfig.tuya_device_id;
+  const tuyaState = tuyaId ? getTuyaState(tuyaId) : undefined;
+
+  // Resolve state: HA if available, otherwise direct Zigbee2MQTT, otherwise Tuya
+  let effectiveState = 'off';
+  if (haState !== 'unavailable') {
+    effectiveState = haState;
+  } else if (z2mState?.state) {
+    effectiveState = z2mState.state.toLowerCase();
+  } else if (tuyaState) {
+    if (tuyaState.switch_1 !== undefined) {
+      effectiveState = tuyaState.switch_1 ? 'on' : 'off';
+    } else if (tuyaState.state !== undefined) {
+      effectiveState = String(tuyaState.state).toLowerCase();
+    }
+  }
+
   const isOn = effectiveState === 'on';
   const isDirectZ2m = z2mName && (haState === 'unavailable' || !device.entity_id);
+  const isDirectTuya = tuyaId && !z2mName && (haState === 'unavailable' || !device.entity_id);
 
   const handleToggle = async () => {
+    // If Tuya is direct
+    if (isDirectTuya && tuyaId) {
+      await setTuyaState(tuyaId, { switch_1: !isOn, state: !isOn ? 'ON' : 'OFF' });
+      return;
+    }
+
     // If HA is unavailable or device has no entity_id, control via Z2M directly
     if (z2mName && (haState === 'unavailable' || !device.entity_id)) {
       await setZ2mState(z2mName, { state: isOn ? 'OFF' : 'ON' });
@@ -40,7 +57,9 @@ export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
       const domain = device.entity_id ? device.entity_id.split('.')[0] : 'switch';
       await callService(domain, isOn ? 'turn_off' : 'turn_on');
     } catch (err) {
-      if (z2mName) {
+      if (tuyaId) {
+        await setTuyaState(tuyaId, { switch_1: !isOn, state: !isOn ? 'ON' : 'OFF' });
+      } else if (z2mName) {
         await setZ2mState(z2mName, { state: isOn ? 'OFF' : 'ON' });
       }
     }
@@ -72,6 +91,11 @@ export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
               {isDirectZ2m && (
                 <span title="Controlled directly via Zigbee2MQTT" className="text-[10px] text-emerald-400 flex items-center gap-0.5">
                   <Radio className="w-2.5 h-2.5" />
+                </span>
+              )}
+              {isDirectTuya && (
+                <span title="Controlled directly via Tuya / Wi-Fi" className="text-[10px] text-amber-400 flex items-center gap-0.5">
+                  <Wifi className="w-2.5 h-2.5" />
                 </span>
               )}
             </div>

@@ -26,6 +26,11 @@ export interface BuildingConfig {
   mqtt_username?: string;
   mqtt_password?: string;
   mqtt_base_topic?: string;
+  tuya_enabled?: number;
+  tuya_access_id?: string;
+  tuya_region?: string;
+  tuya_endpoint?: string;
+  tuya_uid?: string;
   excluded_employee_ids_json?: string;
   updated_at?: string;
 }
@@ -92,7 +97,10 @@ export type DeviceType =
   | 'presence_sensor'
   | 'exhaust_fan'
   | 'ttlock'
-  | 'media_player';
+  | 'media_player'
+  | 'environmental_sensor'
+  | 'energy_meter'
+  | 'smart_knob';
 
 export interface Device {
   id: string;
@@ -103,6 +111,10 @@ export interface Device {
   subtitle?: string | null;
   entity_id?: string | null;
   z2m_friendly_name?: string | null;
+  tuya_device_id?: string | null;
+  tuya_local_key?: string | null;
+  tuya_ip?: string | null;
+  tuya_protocol_version?: string | null;
   config_json: string;
   show_on_default_dashboard: number;
   sort_order: number;
@@ -199,6 +211,33 @@ export interface Z2mStatus {
   lastError: string | null;
 }
 
+export interface TuyaDevice {
+  id: string;
+  name: string;
+  category: string;
+  product_name?: string;
+  local_key?: string;
+  ip?: string;
+  online: boolean;
+  is_local: boolean;
+  protocol_version: string;
+  status: Record<string, any>;
+  dps: Record<string, any>;
+}
+
+export interface TuyaStatus {
+  enabled: boolean;
+  cloud_connected: boolean;
+  region: string;
+  endpoint: string;
+  access_id: string;
+  uid?: string;
+  devices_count: number;
+  local_online_count: number;
+  last_sync: string | null;
+  last_error: string | null;
+}
+
 export interface BootstrapData {
   config: BuildingConfig;
   hubs: HaHub[];
@@ -214,4 +253,7 @@ export interface BootstrapData {
   z2m_status?: Z2mStatus;
   z2m_devices?: Z2mDevice[];
   z2m_states?: Record<string, any>;
+  tuya_status?: TuyaStatus;
+  tuya_devices?: TuyaDevice[];
+  tuya_states?: Record<string, any>;
 }

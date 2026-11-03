@@ -47,6 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       if (!res.config.require_home_key) {
         setHomeKeyVerified(true);
+        localStorage.setItem('dominatee_home_key_verified', 'true');
       }
     } catch (err) {
       console.warn('[Auth] Check failed:', err);

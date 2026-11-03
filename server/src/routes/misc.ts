@@ -72,6 +72,25 @@ router.get('/news', (req, res) => {
   return res.json({ ok: true, news: newsItems });
 });
 
+function normalizeOnvifUrl(onvifUrl?: string | null, rtspUrl?: string | null): string | null {
+  if (onvifUrl && onvifUrl.trim().startsWith('http://')) {
+    return onvifUrl.trim();
+  }
+  const source = onvifUrl || rtspUrl || '';
+  const match = source.match(/^rtsp:\/\/(?:([^:]+):([^@]+)@)?([^:/]+)(?::(\d+))?/);
+  if (match) {
+    const host = match[3];
+    if (host === '192.168.0.38' || source.includes('5543') || source.includes('channel')) {
+      return `http://${host}:8000/onvif/device_service`;
+    }
+    if (host === '192.168.0.39' || source.includes('tapo')) {
+      return `http://192.168.0.176:2020/onvif/device_service`;
+    }
+    return `http://${host}:8000/onvif/device_service`;
+  }
+  return onvifUrl ? onvifUrl.trim() : null;
+}
+
 // ==========================================
 // PTZ Camera Control
 // ==========================================
@@ -85,31 +104,20 @@ router.post('/cameras/:id/ptz', async (req, res) => {
       return res.status(404).json({ error: 'Camera not found' });
     }
 
-    let xaddr = cam.onvif_url;
-    let user = cam.onvif_user;
-    let pass = cam.onvif_pass;
+    let xaddr = normalizeOnvifUrl(cam.onvif_url, cam.rtsp_main_url || cam.rtsp_sub_url);
+    let user = cam.onvif_user || 'admin';
+    let pass = cam.onvif_pass || '';
 
     if (!xaddr) {
-      const rtsp = cam.rtsp_main_url || cam.rtsp_sub_url || '';
-      const match = rtsp.match(/^rtsp:\/\/(?:([^:]+):([^@]+)@)?([^:/]+)(?::(\d+))?/);
-      if (match) {
-        const u = match[1];
-        const p = match[2];
-        const host = match[3];
-        if (host === '192.168.0.39' || rtsp.includes('tapo')) {
-          xaddr = 'http://192.168.0.176:2020/onvif/device_service';
-          user = user || 'bezlin';
-          pass = pass || '#Kinhah3059';
-        } else {
-          xaddr = `http://${host}:2020/onvif/device_service`;
-          user = user || u;
-          pass = pass || p;
-        }
-      } else {
-        xaddr = 'http://192.168.0.176:2020/onvif/device_service';
-        user = user || 'bezlin';
-        pass = pass || '#Kinhah3059';
-      }
+      return res.status(400).json({
+        error: 'No ONVIF service URL found for this camera. Please set ONVIF URL (e.g. http://192.168.0.38:8000/onvif/device_service) in Admin Studio -> CCTV.'
+      });
+    }
+
+    if (!pass && (xaddr.includes('8000') || xaddr.includes('192.168.0.38'))) {
+      return res.status(400).json({
+        error: 'Camera ONVIF Password Required: Open your CP Plus EzyKam+ app -> Settings -> PC View / ONVIF to view or set the password, then save it in Admin Studio -> CCTV.'
+      });
     }
 
     if (action === 'stop') {
@@ -117,14 +125,23 @@ router.post('/cameras/:id/ptz', async (req, res) => {
       return res.json(result);
     }
 
-    const result = await ptzMove(
-      cam.id,
-      { xaddr, user, pass },
-      direction || 'right',
-      speed !== undefined ? Number(speed) : 0.4,
-      durationMs !== undefined ? Number(durationMs) : 450
-    );
-    return res.json(result);
+    try {
+      const result = await ptzMove(
+        cam.id,
+        { xaddr, user, pass },
+        direction || 'right',
+        speed !== undefined ? Number(speed) : 0.4,
+        durationMs !== undefined ? Number(durationMs) : 450
+      );
+      return res.json(result);
+    } catch (moveErr: any) {
+      if (moveErr.message?.includes('Not Authorized') || moveErr.message?.includes('401') || moveErr.message?.includes('400')) {
+        return res.status(401).json({
+          error: 'ONVIF Authorization Failed: The ONVIF password is missing or incorrect. In your CP Plus EzyKam+ app, go to Settings -> PC View / ONVIF to view or set the password, then enter it in Admin Studio -> CCTV.'
+        });
+      }
+      throw moveErr;
+    }
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }

@@ -46,6 +46,23 @@ export interface Z2mStatus {
   lastError: string | null;
 }
 
+export function normalizeBrokerUrl(rawUrl: string): string {
+  let url = (rawUrl || 'mqtt://127.0.0.1:1883').trim();
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    url = url.replace(/^https?:\/\//i, 'mqtt://');
+  }
+  if (!url.startsWith('mqtt://') && !url.startsWith('mqtts://') && !url.startsWith('ws://') && !url.startsWith('wss://')) {
+    url = `mqtt://${url}`;
+  }
+  // Replace HTTP web UI ports (like 8085 or 8080) with 1883
+  url = url.replace(/:808[0-9](\/?)$/, ':1883$1');
+  const withoutProto = url.replace(/^[a-z]+:\/\//, '');
+  if (!withoutProto.includes(':')) {
+    url = `${url.replace(/\/$/, '')}:1883`;
+  }
+  return url;
+}
+
 class MqttService {
   private client: MqttClient | null = null;
   private enabled: boolean = false;
@@ -85,16 +102,19 @@ class MqttService {
 
   public connect(customConfig?: { brokerUrl?: string; username?: string; password?: string; baseTopic?: string }) {
     if (customConfig) {
-      if (customConfig.brokerUrl) this.brokerUrl = customConfig.brokerUrl;
+      if (customConfig.brokerUrl) this.brokerUrl = normalizeBrokerUrl(customConfig.brokerUrl);
       if (customConfig.username !== undefined) this.username = customConfig.username;
       if (customConfig.password !== undefined) this.password = customConfig.password;
       if (customConfig.baseTopic) this.baseTopic = customConfig.baseTopic.trim();
+    } else {
+      this.brokerUrl = normalizeBrokerUrl(this.brokerUrl);
     }
 
     this.disconnect();
 
     try {
       const options: mqtt.IClientOptions = {
+        protocolVersion: 4,
         reconnectPeriod: 5000,
         connectTimeout: 10000,
         clientId: `dominatee_os_${crypto.randomBytes(3).toString('hex')}`,
@@ -244,6 +264,19 @@ class MqttService {
         const merged = { ...current, ...parsedState };
         this.deviceStates.set(friendlyName, merged);
 
+        // Bi-directional lookup: also index under ieee_address (or friendly_name) so both keys work
+        const knownDev = Array.from(this.discoveredDevices.values()).find(
+          (d) => d.friendly_name === friendlyName || d.ieee_address === friendlyName
+        );
+        if (knownDev) {
+          if (knownDev.ieee_address && knownDev.ieee_address !== friendlyName) {
+            this.deviceStates.set(knownDev.ieee_address, merged);
+          }
+          if (knownDev.friendly_name && knownDev.friendly_name !== friendlyName) {
+            this.deviceStates.set(knownDev.friendly_name, merged);
+          }
+        }
+
         // Broadcast to clients over WebSocket liveSync
         liveSync.broadcast('z2m_state_changed', {
           friendly_name: friendlyName,
@@ -261,7 +294,12 @@ class MqttService {
       throw new Error('MQTT broker is not connected');
     }
 
-    const topic = `${this.baseTopic}/${friendlyName}/set`;
+    // Resolve target topic: can be friendly_name or ieee_address
+    const knownDev = Array.from(this.discoveredDevices.values()).find(
+      (d) => d.friendly_name === friendlyName || d.ieee_address === friendlyName
+    );
+    const target = knownDev?.friendly_name || friendlyName;
+    const topic = `${this.baseTopic}/${target}/set`;
     const payload = JSON.stringify(stateObj);
 
     return new Promise((resolve, reject) => {
@@ -272,12 +310,15 @@ class MqttService {
         }
 
         // Optimistically update memory state
-        const current = this.deviceStates.get(friendlyName) || {};
+        const current = this.deviceStates.get(target) || {};
         const next = { ...current, ...stateObj };
-        this.deviceStates.set(friendlyName, next);
+        this.deviceStates.set(target, next);
+        if (knownDev?.ieee_address) {
+          this.deviceStates.set(knownDev.ieee_address, next);
+        }
 
         liveSync.broadcast('z2m_state_changed', {
-          friendly_name: friendlyName,
+          friendly_name: target,
           state: next,
         });
 
@@ -346,7 +387,7 @@ class MqttService {
     baseTopic?: string;
   }) {
     this.enabled = config.enabled;
-    this.brokerUrl = config.brokerUrl || 'mqtt://127.0.0.1:1883';
+    this.brokerUrl = normalizeBrokerUrl(config.brokerUrl);
     this.username = config.username || '';
     if (config.password !== undefined) {
       this.password = config.password;
@@ -420,12 +461,12 @@ class MqttService {
     }
 
     let importedCount = 0;
-    const now = new Date().toISOString();
 
     for (const d of discovered) {
-      // Check if already mapped
-      const existing = db.prepare('SELECT id FROM devices WHERE z2m_friendly_name = ? OR name = ?').get(
+      // Check if already mapped by friendly_name or ieee_address
+      const existing = db.prepare('SELECT id FROM devices WHERE z2m_friendly_name = ? OR z2m_friendly_name = ? OR name = ?').get(
         d.friendly_name,
+        d.ieee_address,
         d.friendly_name
       );
 
@@ -438,15 +479,30 @@ class MqttService {
       const hasCover = exposes.some((e: any) => e.type === 'cover' || e.name === 'cover');
       const hasOccupancy = exposes.some((e: any) => e.name === 'occupancy' || e.property === 'occupancy');
       const hasClimate = exposes.some((e: any) => e.type === 'climate');
+      const hasAirQuality = exposes.some((e: any) => e.name === 'co2' || e.name === 'formaldehyd' || e.name === 'voc' || e.property === 'co2');
+      const hasEnergyMeter = exposes.some((e: any) => e.name === 'energy' || e.name === 'power_a' || e.name === 'power' || e.property === 'energy' || e.property === 'power_a');
+      const hasKnob = exposes.some((e: any) => e.name === 'action' || e.property === 'action') || d.definition?.model?.toLowerCase().includes('knob') || d.friendly_name.toLowerCase().includes('knob');
 
       if (hasLight) {
         devType = 'dimmable_light';
       } else if (hasCover) {
         devType = 'cover';
+      } else if (hasAirQuality) {
+        devType = 'environmental_sensor';
+      } else if (hasEnergyMeter) {
+        devType = 'energy_meter';
+      } else if (hasKnob) {
+        devType = 'smart_knob';
       } else if (hasOccupancy) {
         devType = 'presence_sensor';
       } else if (hasClimate) {
         devType = 'climate';
+      }
+
+      // Friendly display name
+      let displayName = d.friendly_name;
+      if (displayName.startsWith('0x') && d.definition?.description) {
+        displayName = d.definition.description;
       }
 
       const devId = `dev_${crypto.randomBytes(4).toString('hex')}`;
@@ -455,12 +511,19 @@ class MqttService {
         z2m_ieee: d.ieee_address,
         vendor: d.definition?.vendor || '',
         model: d.definition?.model || '',
+        enabled_controls: hasLight
+          ? ['brightness', 'color_temp', 'power_wattage']
+          : hasAirQuality
+          ? ['co2', 'temp', 'humidity', 'voc', 'formaldehyd']
+          : hasEnergyMeter
+          ? ['power', 'voltage', 'current', 'energy', 'relay']
+          : undefined,
       });
 
       db.prepare(`
         INSERT INTO devices (id, room_id, type, name, z2m_friendly_name, config_json, show_on_default_dashboard, sort_order)
-        VALUES (?, ?, ?, ?, ?, ?, 1, 0)
-      `).run(devId, targetRoomId, devType, d.friendly_name, d.friendly_name, devConfig);
+        VALUES (?, ?, ?, ?, ?, ?, 0, 0)
+      `).run(devId, targetRoomId, devType, displayName, d.friendly_name, devConfig);
 
       importedCount++;
     }

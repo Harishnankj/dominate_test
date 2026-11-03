@@ -10,6 +10,7 @@ import {
   Sparkles,
   Signal,
   Sliders,
+  Wifi,
 } from 'lucide-react';
 import type { Device } from '../../types';
 import { useEntity } from '../../context/MultiHubHomeAssistantProvider';
@@ -44,7 +45,7 @@ const MINI_COLOR_SWATCHES = [
 export const DimmableLightTile: React.FC<DimmableLightTileProps> = ({ device }) => {
   const { state, attributes, callService } = useEntity(device.entity_id, device.ha_hub_id);
   const { isFavorite, toggleFavorite, user } = useAuth();
-  const { getZ2mState, setZ2mState, getZ2mDevice } = useBootstrap();
+  const { getZ2mState, setZ2mState, getZ2mDevice, getTuyaState, setTuyaState } = useBootstrap();
 
   const isAdmin = user?.role === 'admin';
 
@@ -67,20 +68,33 @@ export const DimmableLightTile: React.FC<DimmableLightTileProps> = ({ device }) 
   const z2mName = device.z2m_friendly_name || devConfig.z2m_friendly_name;
   const z2mState = z2mName ? getZ2mState(z2mName) : undefined;
   const z2mDev = z2mName ? getZ2mDevice(z2mName) : undefined;
-  const isDirectZ2m = z2mName && (state === 'unavailable' || !device.entity_id);
 
-  const effectiveState =
-    state !== 'unavailable'
-      ? state
-      : z2mState?.state
-      ? z2mState.state.toLowerCase()
-      : 'off';
+  const tuyaId = device.tuya_device_id || devConfig.tuya_device_id;
+  const tuyaState = tuyaId ? getTuyaState(tuyaId) : undefined;
+
+  const isDirectZ2m = z2mName && (state === 'unavailable' || !device.entity_id);
+  const isDirectTuya = tuyaId && !z2mName && (state === 'unavailable' || !device.entity_id);
+
+  let effectiveState = 'off';
+  if (state !== 'unavailable') {
+    effectiveState = state;
+  } else if (z2mState?.state) {
+    effectiveState = z2mState.state.toLowerCase();
+  } else if (tuyaState) {
+    if (tuyaState.switch_1 !== undefined) {
+      effectiveState = tuyaState.switch_1 ? 'on' : 'off';
+    } else if (tuyaState.state !== undefined) {
+      effectiveState = String(tuyaState.state).toLowerCase();
+    }
+  }
   const isOn = effectiveState === 'on';
 
   const haBrightness = attributes.brightness ? Math.round((attributes.brightness / 255) * 100) : (isOn ? 100 : 0);
   const z2mBrightness = z2mState?.brightness !== undefined ? Math.round((z2mState.brightness / 254) * 100) : (isOn ? 100 : 0);
-  const brightness = state !== 'unavailable' ? haBrightness : z2mBrightness;
-  const colorTempKelvin = attributes.color_temp_kelvin || (z2mState?.color_temp ? Math.round(1000000 / z2mState.color_temp) : 4000);
+  const tuyaBrightness = tuyaState?.bright_value !== undefined ? Math.round((tuyaState.bright_value / 1000) * 100) : tuyaState?.brightness !== undefined ? Number(tuyaState.brightness) : (isOn ? 100 : 0);
+
+  const brightness = state !== 'unavailable' ? haBrightness : z2mName ? z2mBrightness : tuyaBrightness;
+  const colorTempKelvin = attributes.color_temp_kelvin || (z2mState?.color_temp ? Math.round(1000000 / z2mState.color_temp) : (tuyaState?.temp_value || 4000));
 
   const [localBrightness, setLocalBrightness] = useState<number | null>(null);
   const [localKelvin, setLocalKelvin] = useState<number | null>(null);
@@ -91,6 +105,11 @@ export const DimmableLightTile: React.FC<DimmableLightTileProps> = ({ device }) 
   const linkQuality = z2mState?.linkquality || z2mDev?.linkquality;
 
   const handleToggle = async () => {
+    if (isDirectTuya && tuyaId) {
+      await setTuyaState(tuyaId, { switch_1: !isOn, state: !isOn ? 'ON' : 'OFF' });
+      return;
+    }
+
     if (z2mName && (state === 'unavailable' || !device.entity_id)) {
       await setZ2mState(z2mName, { state: isOn ? 'OFF' : 'ON' });
       return;
@@ -99,7 +118,9 @@ export const DimmableLightTile: React.FC<DimmableLightTileProps> = ({ device }) 
     try {
       await callService('light', isOn ? 'turn_off' : 'turn_on');
     } catch {
-      if (z2mName) {
+      if (tuyaId) {
+        await setTuyaState(tuyaId, { switch_1: !isOn, state: !isOn ? 'ON' : 'OFF' });
+      } else if (z2mName) {
         await setZ2mState(z2mName, { state: isOn ? 'OFF' : 'ON' });
       }
     }
@@ -111,6 +132,16 @@ export const DimmableLightTile: React.FC<DimmableLightTileProps> = ({ device }) 
 
   const handleBrightnessCommit = async (val: number) => {
     setLocalBrightness(null);
+
+    if (isDirectTuya && tuyaId) {
+      if (val === 0) {
+        await setTuyaState(tuyaId, { switch_1: false, state: 'OFF' });
+      } else {
+        await setTuyaState(tuyaId, { switch_1: true, state: 'ON', brightness: val });
+      }
+      return;
+    }
+
     const z2mBrightnessVal = Math.round((val / 100) * 254);
 
     if (z2mName && (state === 'unavailable' || !device.entity_id)) {
@@ -222,6 +253,11 @@ export const DimmableLightTile: React.FC<DimmableLightTileProps> = ({ device }) 
                 {isDirectZ2m && (
                   <span title="Controlled directly via Zigbee2MQTT" className="text-[10px] text-emerald-400 flex items-center gap-0.5">
                     <Radio className="w-2.5 h-2.5" />
+                  </span>
+                )}
+                {isDirectTuya && (
+                  <span title="Controlled directly via Tuya / Wi-Fi" className="text-[10px] text-amber-400 flex items-center gap-0.5">
+                    <Wifi className="w-2.5 h-2.5" />
                   </span>
                 )}
                 {hasControl('signal_lqi') && linkQuality !== undefined && (

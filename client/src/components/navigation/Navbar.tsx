@@ -11,6 +11,7 @@ import {
   KeyRound,
   Layers,
   ChevronDown,
+  Radio,
 } from 'lucide-react';
 import { useBootstrap } from '../../context/BootstrapContext';
 import { useAuth } from '../../context/AuthContext';
@@ -32,7 +33,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   setSelectedFloorId,
   onOpenAdmin,
 }) => {
-  const { data, isLiveSyncConnected } = useBootstrap();
+  const { data, isLiveSyncConnected, z2mStatus, tuyaStatus } = useBootstrap();
   const { user, logout, isAdmin } = useAuth();
   const { isConnected: isHaConnected } = useHA();
 
@@ -77,18 +78,28 @@ export const Navbar: React.FC<NavbarProps> = ({
                 LOCAL-FIRST
               </span>
             </div>
-            <div className="flex items-center gap-2 text-xs text-slate-400">
+            <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
               <span className="flex items-center gap-1 font-mono text-[11px]">
                 {isHaConnected ? (
                   <span className="text-emerald-400 flex items-center gap-1">
                     <Wifi className="w-3 h-3" /> HA Active
                   </span>
                 ) : (
-                  <span className="text-amber-400 flex items-center gap-1">
-                    <WifiOff className="w-3 h-3" /> HA Syncing
+                  <span className="text-slate-400 flex items-center gap-1" title="Home Assistant offline - local direct Zigbee & Tuya active">
+                    <WifiOff className="w-3 h-3 text-slate-500" /> HA Offline
                   </span>
                 )}
               </span>
+              {z2mStatus?.connected && (
+                <span className="text-emerald-400 flex items-center gap-1 font-mono text-[11px] border-l border-white/10 pl-2">
+                  <Radio className="w-3 h-3" /> Zigbee Online
+                </span>
+              )}
+              {tuyaStatus?.cloud_connected && (
+                <span className="text-cyan-400 flex items-center gap-1 font-mono text-[11px] border-l border-white/10 pl-2">
+                  <Wifi className="w-3 h-3" /> Tuya Online
+                </span>
+              )}
             </div>
           </div>
         </div>

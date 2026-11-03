@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import type { BootstrapData, Floor, Room, Device, Camera, IrProfile, Automation, Z2mStatus, Z2mDevice } from '../types';
+import type { BootstrapData, Floor, Room, Device, Camera, IrProfile, Automation, Z2mStatus, Z2mDevice, TuyaStatus, TuyaDevice } from '../types';
 import { ApiService } from '../services/api';
 
 interface BootstrapContextType {
@@ -19,6 +19,12 @@ interface BootstrapContextType {
   getZ2mState: (friendlyName: string) => Record<string, any> | undefined;
   setZ2mState: (friendlyName: string, state: Record<string, any>) => Promise<boolean>;
   getZ2mDevice: (friendlyNameOrIeee: string) => Z2mDevice | undefined;
+  tuyaStatus: TuyaStatus | null;
+  tuyaStates: Record<string, any>;
+  tuyaDevices: TuyaDevice[];
+  getTuyaState: (deviceId: string) => Record<string, any> | undefined;
+  setTuyaState: (deviceId: string, state: Record<string, any>) => Promise<boolean>;
+  getTuyaDevice: (deviceId: string) => TuyaDevice | undefined;
 }
 
 const BootstrapContext = createContext<BootstrapContextType | undefined>(undefined);
@@ -30,20 +36,20 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [z2mStatus, setZ2mStatus] = useState<Z2mStatus | null>(null);
   const [z2mStates, setZ2mStates] = useState<Record<string, any>>({});
   const [z2mDevices, setZ2mDevices] = useState<Z2mDevice[]>([]);
+  const [tuyaStatus, setTuyaStatus] = useState<TuyaStatus | null>(null);
+  const [tuyaStates, setTuyaStates] = useState<Record<string, any>>({});
+  const [tuyaDevices, setTuyaDevices] = useState<TuyaDevice[]>([]);
 
   const fetchBootstrap = useCallback(async () => {
     try {
       const res = await ApiService.getBootstrap();
       setData(res);
-      if (res.z2m_status) {
-        setZ2mStatus(res.z2m_status);
-      }
-      if (res.z2m_devices) {
-        setZ2mDevices(res.z2m_devices);
-      }
-      if (res.z2m_states) {
-        setZ2mStates(res.z2m_states);
-      }
+      if (res.z2m_status) setZ2mStatus(res.z2m_status);
+      if (res.z2m_devices) setZ2mDevices(res.z2m_devices);
+      if (res.z2m_states) setZ2mStates(res.z2m_states);
+      if (res.tuya_status) setTuyaStatus(res.tuya_status);
+      if (res.tuya_devices) setTuyaDevices(res.tuya_devices);
+      if (res.tuya_states) setTuyaStates(res.tuya_states);
     } catch (err) {
       console.warn('[BootstrapContext] Failed to load bootstrap:', err);
     } finally {
@@ -67,8 +73,28 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     ApiService.getZ2mDevices()
       .then((res) => {
-        if (res.ok && Array.isArray(res.devices)) {
+        if (res.ok && res.devices) {
           setZ2mDevices(res.devices);
+        }
+      })
+      .catch(() => { });
+
+    // Load initial Tuya states and devices
+    ApiService.getTuyaStatus()
+      .then((res) => {
+        if (res.ok) {
+          setTuyaStatus(res.status);
+          if (res.states) {
+            setTuyaStates((prev) => ({ ...prev, ...res.states }));
+          }
+        }
+      })
+      .catch(() => { });
+
+    ApiService.getTuyaDevices()
+      .then((res) => {
+        if (res.ok && res.devices) {
+          setTuyaDevices(res.devices);
         }
       })
       .catch(() => { });
@@ -126,6 +152,21 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               }
             } else if (msg.type === 'z2m_status_changed') {
               setZ2mStatus(msg.payload);
+            } else if (msg.type === 'tuya_state_changed') {
+              const { device_id, state } = msg.payload || {};
+              if (device_id) {
+                setTuyaStates((prev) => ({
+                  ...prev,
+                  [device_id]: { ...prev[device_id], ...state },
+                }));
+              }
+            } else if (msg.type === 'tuya_devices_updated') {
+              const { devices } = msg.payload || {};
+              if (Array.isArray(devices)) {
+                setTuyaDevices(devices);
+              }
+            } else if (msg.type === 'tuya_status_changed') {
+              setTuyaStatus(msg.payload);
             }
           } catch (_) { }
         };
@@ -255,6 +296,37 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     []
   );
 
+  const getTuyaState = useCallback(
+    (deviceId: string) => {
+      return tuyaStates[deviceId];
+    },
+    [tuyaStates]
+  );
+
+  const getTuyaDevice = useCallback(
+    (deviceId: string) => {
+      return tuyaDevices.find((d) => d.id === deviceId);
+    },
+    [tuyaDevices]
+  );
+
+  const setTuyaState = useCallback(
+    async (deviceId: string, state: Record<string, any>) => {
+      setTuyaStates((prev) => ({
+        ...prev,
+        [deviceId]: { ...prev[deviceId], ...state },
+      }));
+      try {
+        const res = await ApiService.setTuyaDeviceState(deviceId, state);
+        return res.ok;
+      } catch (err) {
+        console.warn('[BootstrapContext] setTuyaState failed:', err);
+        return false;
+      }
+    },
+    []
+  );
+
   return (
     <BootstrapContext.Provider
       value={{
@@ -274,6 +346,12 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         getZ2mState,
         setZ2mState,
         getZ2mDevice,
+        tuyaStatus,
+        tuyaStates,
+        tuyaDevices,
+        getTuyaState,
+        setTuyaState,
+        getTuyaDevice,
       }}
     >
       {children}

@@ -34,6 +34,32 @@ export interface Z2mDiscoveredDevice {
   linkquality?: number;
   disabled?: boolean;
   last_seen?: string;
+  base_topic?: string;
+  hub_id?: string;
+  hub_name?: string;
+}
+
+export interface Z2mHubRecord {
+  id: string;
+  name: string;
+  broker_url: string;
+  base_topic: string;
+  username?: string;
+  password?: string;
+  enabled: number;
+  sort_order: number;
+}
+
+export interface Z2mHubStatus {
+  id: string;
+  name: string;
+  broker_url: string;
+  base_topic: string;
+  enabled: boolean;
+  connected: boolean;
+  bridgeState: 'online' | 'offline' | 'unknown';
+  devicesCount: number;
+  lastError: string | null;
 }
 
 export interface Z2mStatus {
@@ -44,6 +70,7 @@ export interface Z2mStatus {
   devicesCount: number;
   bridgeState: 'online' | 'offline' | 'unknown';
   lastError: string | null;
+  hubs: Z2mHubStatus[];
 }
 
 export function normalizeBrokerUrl(rawUrl: string): string {
@@ -63,16 +90,16 @@ export function normalizeBrokerUrl(rawUrl: string): string {
   return url;
 }
 
+interface HubConnection {
+  hub: Z2mHubRecord;
+  client: MqttClient | null;
+  connected: boolean;
+  bridgeState: 'online' | 'offline' | 'unknown';
+  lastError: string | null;
+}
+
 class MqttService {
-  private client: MqttClient | null = null;
-  private enabled: boolean = false;
-  private connected: boolean = false;
-  private brokerUrl: string = 'mqtt://127.0.0.1:1883';
-  private username: string = '';
-  private password: string = '';
-  private baseTopic: string = 'zigbee2mqtt';
-  private bridgeState: 'online' | 'offline' | 'unknown' = 'unknown';
-  private lastError: string | null = null;
+  private hubConnections: Map<string, HubConnection> = new Map();
 
   // In-memory cache of discovered devices and live states
   private discoveredDevices: Map<string, Z2mDiscoveredDevice> = new Map();
@@ -80,121 +107,137 @@ class MqttService {
 
   public init() {
     try {
-      const config = db.prepare('SELECT mqtt_enabled, mqtt_broker_url, mqtt_username, mqtt_password, mqtt_base_topic FROM building_config WHERE id = 1').get() as any;
-      if (config) {
-        this.enabled = config.mqtt_enabled === 1;
-        this.brokerUrl = config.mqtt_broker_url || 'mqtt://127.0.0.1:1883';
-        this.username = config.mqtt_username || '';
-        this.password = config.mqtt_password || '';
-        this.baseTopic = (config.mqtt_base_topic || 'zigbee2mqtt').trim();
-      }
+      // Load all hubs from z2m_hubs table
+      const hubs = (db.prepare('SELECT * FROM z2m_hubs ORDER BY sort_order ASC, name ASC').all() as unknown) as Z2mHubRecord[];
+      console.log(`[MQTT] Initializing Multi-Hub Zigbee2MQTT service (${hubs.length} coordinators configured)`);
 
-      if (this.enabled) {
-        console.log(`[MQTT] Zigbee2MQTT enabled. Connecting to broker: ${this.brokerUrl}`);
-        this.connect();
-      } else {
-        console.log('[MQTT] Zigbee2MQTT service initialized (Disabled in configuration)');
+      for (const hub of hubs) {
+        if (hub.enabled === 1) {
+          this.connectHub(hub);
+        } else {
+          this.hubConnections.set(hub.id, {
+            hub,
+            client: null,
+            connected: false,
+            bridgeState: 'unknown',
+            lastError: null,
+          });
+        }
       }
     } catch (err: any) {
       console.warn('[MQTT] Error initializing MQTT service:', err.message);
     }
   }
 
-  public connect(customConfig?: { brokerUrl?: string; username?: string; password?: string; baseTopic?: string }) {
-    if (customConfig) {
-      if (customConfig.brokerUrl) this.brokerUrl = normalizeBrokerUrl(customConfig.brokerUrl);
-      if (customConfig.username !== undefined) this.username = customConfig.username;
-      if (customConfig.password !== undefined) this.password = customConfig.password;
-      if (customConfig.baseTopic) this.baseTopic = customConfig.baseTopic.trim();
-    } else {
-      this.brokerUrl = normalizeBrokerUrl(this.brokerUrl);
-    }
+  // Connect a specific coordinator hub
+  public connectHub(hub: Z2mHubRecord) {
+    this.disconnectHub(hub.id);
 
-    this.disconnect();
+    const brokerUrl = normalizeBrokerUrl(hub.broker_url);
+    const baseTopic = (hub.base_topic || 'zigbee2mqtt').trim();
+
+    const conn: HubConnection = {
+      hub,
+      client: null,
+      connected: false,
+      bridgeState: 'unknown',
+      lastError: null,
+    };
+    this.hubConnections.set(hub.id, conn);
 
     try {
       const options: mqtt.IClientOptions = {
         protocolVersion: 4,
         reconnectPeriod: 5000,
         connectTimeout: 10000,
-        clientId: `dominatee_os_${crypto.randomBytes(3).toString('hex')}`,
+        clientId: `dominatee_${hub.id}_${crypto.randomBytes(2).toString('hex')}`,
         clean: true,
       };
 
-      if (this.username) {
-        options.username = this.username;
-      }
-      if (this.password) {
-        options.password = this.password;
-      }
+      if (hub.username) options.username = hub.username;
+      if (hub.password) options.password = hub.password;
 
-      this.client = mqtt.connect(this.brokerUrl, options);
+      console.log(`[MQTT] [${hub.name}] Connecting to ${brokerUrl} (base topic: ${baseTopic})`);
+      const client = mqtt.connect(brokerUrl, options);
+      conn.client = client;
 
-      this.client.on('connect', () => {
-        this.connected = true;
-        this.lastError = null;
-        console.log(`[MQTT] Successfully connected to MQTT broker: ${this.brokerUrl}`);
+      client.on('connect', () => {
+        conn.connected = true;
+        conn.lastError = null;
+        console.log(`[MQTT] [${hub.name}] Connected to broker: ${brokerUrl}`);
 
-        // Subscribe to Z2M topics
         const topics = [
-          `${this.baseTopic}/#`,
-          `${this.baseTopic}/bridge/state`,
-          `${this.baseTopic}/bridge/devices`,
-          `${this.baseTopic}/bridge/info`,
-          `${this.baseTopic}/bridge/response/#`,
+          `${baseTopic}/#`,
+          `${baseTopic}/bridge/state`,
+          `${baseTopic}/bridge/devices`,
+          `${baseTopic}/bridge/info`,
+          `${baseTopic}/bridge/response/#`,
         ];
 
-        this.client?.subscribe(topics, (err) => {
+        client.subscribe(topics, (err) => {
           if (err) {
-            console.warn('[MQTT] Subscribe error:', err.message);
+            console.warn(`[MQTT] [${hub.name}] Subscribe error:`, err.message);
           } else {
-            console.log(`[MQTT] Subscribed to Zigbee2MQTT base topic "${this.baseTopic}/#"`);
+            console.log(`[MQTT] [${hub.name}] Subscribed to "${baseTopic}/#"`);
           }
         });
 
         this.broadcastStatus();
       });
 
-      this.client.on('message', (topic: string, message: Buffer) => {
-        this.handleIncomingMessage(topic, message.toString());
+      client.on('message', (topic: string, message: Buffer) => {
+        this.handleIncomingMessage(hub, conn, topic, message.toString());
       });
 
-      this.client.on('error', (err: Error) => {
-        this.lastError = err.message;
-        console.warn(`[MQTT] Broker connection error: ${err.message}`);
+      client.on('error', (err: Error) => {
+        conn.lastError = err.message;
+        console.warn(`[MQTT] [${hub.name}] Error: ${err.message}`);
         this.broadcastStatus();
       });
 
-      this.client.on('close', () => {
-        if (this.connected) {
-          console.log('[MQTT] Broker connection closed');
+      client.on('close', () => {
+        if (conn.connected) {
+          console.log(`[MQTT] [${hub.name}] Connection closed`);
         }
-        this.connected = false;
+        conn.connected = false;
         this.broadcastStatus();
       });
     } catch (err: any) {
-      this.lastError = err.message;
-      this.connected = false;
-      console.warn('[MQTT] Failed to initialize connection:', err.message);
+      conn.lastError = err.message;
+      conn.connected = false;
+      console.warn(`[MQTT] [${hub.name}] Failed to initialize connection:`, err.message);
       this.broadcastStatus();
     }
   }
 
-  public disconnect() {
-    if (this.client) {
+  // Disconnect a specific coordinator hub
+  public disconnectHub(hubId: string) {
+    const conn = this.hubConnections.get(hubId);
+    if (conn && conn.client) {
       try {
-        this.client.end(true);
+        conn.client.end(true);
       } catch (_) {}
-      this.client = null;
+      conn.client = null;
     }
-    this.connected = false;
-    this.bridgeState = 'unknown';
+    if (conn) {
+      conn.connected = false;
+      conn.bridgeState = 'unknown';
+    }
   }
 
-  private handleIncomingMessage(topic: string, payloadStr: string) {
+  public disconnectAll() {
+    for (const hubId of this.hubConnections.keys()) {
+      this.disconnectHub(hubId);
+    }
+  }
+
+  // Handle incoming messages from a specific hub
+  private handleIncomingMessage(hub: Z2mHubRecord, conn: HubConnection, topic: string, payloadStr: string) {
     try {
+      const baseTopic = (hub.base_topic || 'zigbee2mqtt').trim();
+
       // 1. Bridge State
-      if (topic === `${this.baseTopic}/bridge/state`) {
+      if (topic === `${baseTopic}/bridge/state`) {
         let stateStr = payloadStr;
         try {
           const parsed = JSON.parse(payloadStr);
@@ -203,17 +246,23 @@ class MqttService {
           }
         } catch (_) {}
 
-        this.bridgeState = stateStr.toLowerCase() === 'online' ? 'online' : 'offline';
+        conn.bridgeState = stateStr.toLowerCase() === 'online' ? 'online' : 'offline';
         this.broadcastStatus();
         return;
       }
 
-      // 2. Discovered Devices from Z2M Bridge
-      if (topic === `${this.baseTopic}/bridge/devices`) {
+      // 2. Discovered Devices
+      if (topic === `${baseTopic}/bridge/devices`) {
         try {
           const list = JSON.parse(payloadStr);
           if (Array.isArray(list)) {
-            this.discoveredDevices.clear();
+            // Remove old devices associated with this specific hub
+            for (const [key, dev] of this.discoveredDevices.entries()) {
+              if (dev.hub_id === hub.id) {
+                this.discoveredDevices.delete(key);
+              }
+            }
+
             for (const item of list) {
               if (item.friendly_name) {
                 this.discoveredDevices.set(item.friendly_name, {
@@ -225,26 +274,29 @@ class MqttService {
                   power_source: item.power_source,
                   linkquality: item.linkquality,
                   disabled: item.disabled,
+                  base_topic: baseTopic,
+                  hub_id: hub.id,
+                  hub_name: hub.name,
                 });
               }
             }
-            console.log(`[MQTT] Discovered ${this.discoveredDevices.size} Zigbee2MQTT devices`);
+
+            console.log(`[MQTT] [${hub.name}] Discovered ${list.length} devices (Total across all coordinators: ${this.discoveredDevices.size})`);
             liveSync.broadcast('z2m_devices_updated', {
               count: this.discoveredDevices.size,
               devices: this.getDiscoveredDevices(),
             });
           }
         } catch (e: any) {
-          console.warn('[MQTT] Failed to parse bridge/devices:', e.message);
+          console.warn(`[MQTT] [${hub.name}] Failed to parse bridge/devices:`, e.message);
         }
         return;
       }
 
       // 3. Regular device state updates
-      if (topic.startsWith(`${this.baseTopic}/`)) {
-        const sub = topic.slice(this.baseTopic.length + 1);
+      if (topic.startsWith(`${baseTopic}/`)) {
+        const sub = topic.slice(baseTopic.length + 1);
 
-        // Ignore bridge system topics and command set topics
         if (sub.startsWith('bridge') || sub.endsWith('/set') || sub.endsWith('/get')) {
           return;
         }
@@ -284,34 +336,94 @@ class MqttService {
         });
       }
     } catch (err: any) {
-      console.warn('[MQTT] Error processing incoming message:', err.message);
+      console.warn(`[MQTT] [${hub.name}] Error processing message:`, err.message);
     }
   }
 
   // Publish direct device commands to Z2M
   public async setDeviceState(friendlyName: string, stateObj: Record<string, any>): Promise<boolean> {
-    if (!this.client || !this.connected) {
-      throw new Error('MQTT broker is not connected');
-    }
-
-    // Resolve target topic: can be friendly_name or ieee_address
     const knownDev = Array.from(this.discoveredDevices.values()).find(
       (d) => d.friendly_name === friendlyName || d.ieee_address === friendlyName
     );
+
+    // Identify which hub connection owns this device
+    let targetConn: HubConnection | undefined;
+    if (knownDev?.hub_id) {
+      targetConn = this.hubConnections.get(knownDev.hub_id);
+    }
+
+    // Fallback: use first connected hub
+    if (!targetConn || !targetConn.connected || !targetConn.client) {
+      targetConn = Array.from(this.hubConnections.values()).find((c) => c.connected && c.client);
+    }
+
+    if (!targetConn || !targetConn.client) {
+      throw new Error('No connected Zigbee2MQTT coordinator available');
+    }
+
+    const baseTopic = (knownDev?.base_topic || targetConn.hub.base_topic || 'zigbee2mqtt').trim();
     const target = knownDev?.friendly_name || friendlyName;
-    const topic = `${this.baseTopic}/${target}/set`;
-    const payload = JSON.stringify(stateObj);
+    const topic = `${baseTopic}/${target}/set`;
+
+    // Smart Toggle & Multi-gang Converter:
+    // Tuya devices (meters, breakers, switches) fail with: Error: Key 'TOGGLE' not found in: [ON, OFF]
+    // Here we resolve the current state and translate TOGGLE to the exact ON/OFF payload the device expects.
+    const current =
+      this.deviceStates.get(target) ||
+      (knownDev?.ieee_address ? this.deviceStates.get(knownDev.ieee_address) : {}) ||
+      {};
+
+    const exposes = knownDev?.definition?.exposes || [];
+    const switchExposes = exposes.filter(
+      (e: any) =>
+        e.type === 'switch' ||
+        e.name === 'state' ||
+        e.features?.some((f: any) => f.name === 'state')
+    );
+
+    let resolvedPayload: Record<string, any> = { ...stateObj };
+
+    const isGenericToggle =
+      stateObj.state && typeof stateObj.state === 'string' && stateObj.state.toUpperCase() === 'TOGGLE';
+
+    if (isGenericToggle) {
+      if (switchExposes.length > 1) {
+        // Multi-gang switch panel (e.g. F3-Pro 4-gang panel with state_l1, state_l2, ...)
+        const endpointProps = switchExposes.map(
+          (e: any) => e.features?.[0]?.property || e.property || (e.endpoint ? `state_${e.endpoint}` : 'state')
+        );
+        const anyOn = endpointProps.some((p: string) => String(current[p] || '').toUpperCase() === 'ON');
+        const nextVal = anyOn ? 'OFF' : 'ON';
+        resolvedPayload = {};
+        for (const p of endpointProps) {
+          resolvedPayload[p] = nextVal;
+        }
+      } else {
+        // Single relay, breaker, or energy meter
+        const isCurrentOn = String(current.state || '').toUpperCase() === 'ON';
+        resolvedPayload = { state: isCurrentOn ? 'OFF' : 'ON' };
+      }
+    } else {
+      // Check if specific endpoint properties were passed as 'TOGGLE' (e.g. { state_l1: 'TOGGLE' })
+      for (const [k, v] of Object.entries(resolvedPayload)) {
+        if (typeof v === 'string' && v.toUpperCase() === 'TOGGLE') {
+          const isCurrentOn = String(current[k] || '').toUpperCase() === 'ON';
+          resolvedPayload[k] = isCurrentOn ? 'OFF' : 'ON';
+        }
+      }
+    }
+
+    const payload = JSON.stringify(resolvedPayload);
 
     return new Promise((resolve, reject) => {
-      this.client?.publish(topic, payload, { qos: 0 }, (err) => {
+      targetConn!.client?.publish(topic, payload, { qos: 0 }, (err) => {
         if (err) {
           console.warn(`[MQTT] Failed to publish to ${topic}:`, err.message);
           return reject(err);
         }
 
         // Optimistically update memory state
-        const current = this.deviceStates.get(target) || {};
-        const next = { ...current, ...stateObj };
+        const next = { ...current, ...resolvedPayload };
         this.deviceStates.set(target, next);
         if (knownDev?.ieee_address) {
           this.deviceStates.set(knownDev.ieee_address, next);
@@ -327,33 +439,65 @@ class MqttService {
     });
   }
 
-  // Permit join (toggle Zigbee pairing mode)
-  public async permitJoin(timeSeconds: number = 254): Promise<boolean> {
-    if (!this.client || !this.connected) {
-      throw new Error('MQTT broker is not connected');
+  // Permit join (toggle Zigbee pairing mode) on all coordinators or a specific one
+  public async permitJoin(timeSeconds: number = 254, hubId?: string): Promise<boolean> {
+    const payload = JSON.stringify({ value: timeSeconds > 0, time: timeSeconds });
+    const conns = hubId
+      ? [this.hubConnections.get(hubId)].filter(Boolean) as HubConnection[]
+      : Array.from(this.hubConnections.values()).filter((c) => c.connected && c.client);
+
+    if (conns.length === 0) {
+      throw new Error('No connected Zigbee coordinators available to permit join');
     }
 
-    const topic = `${this.baseTopic}/bridge/request/permit_join`;
-    const payload = JSON.stringify({ value: timeSeconds > 0, time: timeSeconds });
-
     return new Promise((resolve, reject) => {
-      this.client?.publish(topic, payload, (err) => {
-        if (err) return reject(err);
-        resolve(true);
-      });
+      let pending = conns.length;
+      let lastErr: any = null;
+
+      for (const conn of conns) {
+        const topic = `${conn.hub.base_topic || 'zigbee2mqtt'}/bridge/request/permit_join`;
+        conn.client?.publish(topic, payload, (err) => {
+          if (err) lastErr = err;
+          pending--;
+          if (pending <= 0) {
+            if (lastErr && conns.length === 1) return reject(lastErr);
+            resolve(true);
+          }
+        });
+      }
     });
   }
 
-  // Get status
+  // Get overall status and individual hub statuses
   public getStatus(): Z2mStatus {
+    const hubStatuses: Z2mHubStatus[] = Array.from(this.hubConnections.values()).map((c) => {
+      const devCount = Array.from(this.discoveredDevices.values()).filter((d) => d.hub_id === c.hub.id).length;
+      return {
+        id: c.hub.id,
+        name: c.hub.name,
+        broker_url: c.hub.broker_url,
+        base_topic: c.hub.base_topic,
+        enabled: c.hub.enabled === 1,
+        connected: c.connected,
+        bridgeState: c.bridgeState,
+        devicesCount: devCount,
+        lastError: c.lastError,
+      };
+    });
+
+    const anyConnected = hubStatuses.some((h) => h.connected);
+    const anyBridgeOnline = hubStatuses.some((h) => h.bridgeState === 'online');
+    const firstHub = hubStatuses[0];
+
     return {
-      enabled: this.enabled,
-      connected: this.connected,
-      brokerUrl: this.brokerUrl,
-      baseTopic: this.baseTopic,
+      enabled: hubStatuses.some((h) => h.enabled),
+      connected: anyConnected,
+      brokerUrl: firstHub?.broker_url || 'mqtt://127.0.0.1:1883',
+      baseTopic: hubStatuses.map((h) => h.base_topic).join(', '),
       devicesCount: this.discoveredDevices.size,
-      bridgeState: this.bridgeState,
-      lastError: this.lastError,
+      bridgeState: anyBridgeOnline ? 'online' : anyConnected ? 'offline' : 'unknown',
+      lastError: hubStatuses.find((h) => h.lastError)?.lastError || null,
+      hubs: hubStatuses,
     };
   }
 
@@ -365,20 +509,138 @@ class MqttService {
     return this.deviceStates.get(friendlyName);
   }
 
-  public getAllDeviceStates(): Record<string, any> {
-    const obj: Record<string, any> = {};
-    for (const [key, val] of this.deviceStates.entries()) {
-      obj[key] = val;
+  public getAllDeviceStates(): Record<string, Record<string, any>> {
+    const obj: Record<string, Record<string, any>> = {};
+    for (const [k, v] of this.deviceStates.entries()) {
+      obj[k] = v;
     }
     return obj;
   }
 
-  // Broadcast status to clients
-  private broadcastStatus() {
-    liveSync.broadcast('z2m_status_changed', this.getStatus());
+  // Hub CRUD management
+  public getHubs(): Z2mHubStatus[] {
+    return this.getStatus().hubs;
   }
 
-  // Update configuration and reconnect
+  public addHub(data: {
+    name: string;
+    broker_url: string;
+    base_topic?: string;
+    username?: string;
+    password?: string;
+    enabled?: boolean;
+  }): Z2mHubRecord {
+    const id = `z2m_hub_${crypto.randomBytes(4).toString('hex')}`;
+    const name = (data.name || 'New Coordinator').trim();
+    const broker_url = normalizeBrokerUrl(data.broker_url);
+    const base_topic = (data.base_topic || 'zigbee2mqtt').trim();
+    const username = (data.username || '').trim();
+    const password = data.password || '';
+    const enabled = data.enabled !== false ? 1 : 0;
+
+    const countRow = db.prepare('SELECT COUNT(*) as cnt FROM z2m_hubs').get() as { cnt: number };
+    const sort_order = countRow?.cnt || 0;
+
+    db.prepare(`
+      INSERT INTO z2m_hubs (id, name, broker_url, base_topic, username, password, enabled, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, name, broker_url, base_topic, username, password, enabled, sort_order);
+
+    const record: Z2mHubRecord = { id, name, broker_url, base_topic, username, password, enabled, sort_order };
+
+    if (enabled === 1) {
+      this.connectHub(record);
+    } else {
+      this.hubConnections.set(id, {
+        hub: record,
+        client: null,
+        connected: false,
+        bridgeState: 'unknown',
+        lastError: null,
+      });
+    }
+
+    this.broadcastStatus();
+    liveSync.broadcast('bootstrap_updated');
+    return record;
+  }
+
+  public updateHub(
+    id: string,
+    data: {
+      name?: string;
+      broker_url?: string;
+      base_topic?: string;
+      username?: string;
+      password?: string;
+      enabled?: boolean;
+    }
+  ): Z2mHubRecord {
+    const existing = (db.prepare('SELECT * FROM z2m_hubs WHERE id = ?').get(id) as unknown) as Z2mHubRecord | undefined;
+    if (!existing) {
+      throw new Error(`Coordinator hub ${id} not found`);
+    }
+
+    const name = data.name !== undefined ? data.name.trim() : existing.name;
+    const broker_url = data.broker_url !== undefined ? normalizeBrokerUrl(data.broker_url) : existing.broker_url;
+    const base_topic = data.base_topic !== undefined ? data.base_topic.trim() : existing.base_topic;
+    const username = data.username !== undefined ? data.username.trim() : existing.username;
+    const password = data.password !== undefined ? data.password : existing.password;
+    const enabled = data.enabled !== undefined ? (data.enabled ? 1 : 0) : existing.enabled;
+
+    db.prepare(`
+      UPDATE z2m_hubs
+      SET name = ?, broker_url = ?, base_topic = ?, username = ?, password = ?, enabled = ?
+      WHERE id = ?
+    `).run(name, broker_url, base_topic, username, password, enabled, id);
+
+    const updated: Z2mHubRecord = {
+      ...existing,
+      name,
+      broker_url,
+      base_topic,
+      username,
+      password,
+      enabled,
+    };
+
+    if (enabled === 1) {
+      this.connectHub(updated);
+    } else {
+      this.disconnectHub(id);
+      this.hubConnections.set(id, {
+        hub: updated,
+        client: null,
+        connected: false,
+        bridgeState: 'unknown',
+        lastError: null,
+      });
+    }
+
+    this.broadcastStatus();
+    liveSync.broadcast('bootstrap_updated');
+    return updated;
+  }
+
+  public deleteHub(id: string): boolean {
+    this.disconnectHub(id);
+    this.hubConnections.delete(id);
+
+    // Remove discovered devices belonging to this hub
+    for (const [key, dev] of this.discoveredDevices.entries()) {
+      if (dev.hub_id === id) {
+        this.discoveredDevices.delete(key);
+      }
+    }
+
+    db.prepare('DELETE FROM z2m_hubs WHERE id = ?').run(id);
+
+    this.broadcastStatus();
+    liveSync.broadcast('bootstrap_updated');
+    return true;
+  }
+
+  // Legacy single form backward compatibility
   public updateConfigAndReconnect(config: {
     enabled: boolean;
     brokerUrl: string;
@@ -386,84 +648,58 @@ class MqttService {
     password?: string;
     baseTopic?: string;
   }) {
-    this.enabled = config.enabled;
-    this.brokerUrl = normalizeBrokerUrl(config.brokerUrl);
-    this.username = config.username || '';
-    if (config.password !== undefined) {
-      this.password = config.password;
-    }
-    this.baseTopic = (config.baseTopic || 'zigbee2mqtt').trim();
-
-    // Persist to DB
-    const now = new Date().toISOString();
-    db.prepare(`
-      UPDATE building_config
-      SET mqtt_enabled = ?,
-          mqtt_broker_url = ?,
-          mqtt_username = ?,
-          mqtt_password = COALESCE(?, mqtt_password),
-          mqtt_base_topic = ?,
-          updated_at = ?
-      WHERE id = 1
-    `).run(
-      this.enabled ? 1 : 0,
-      this.brokerUrl,
-      this.username,
-      config.password !== undefined ? this.password : null,
-      this.baseTopic,
-      now
-    );
-
-    liveSync.broadcast('bootstrap_updated');
-
-    if (this.enabled) {
-      this.connect();
+    const existing = db.prepare('SELECT id FROM z2m_hubs ORDER BY sort_order ASC LIMIT 1').get() as { id: string } | undefined;
+    if (existing) {
+      this.updateHub(existing.id, {
+        enabled: config.enabled,
+        broker_url: config.brokerUrl,
+        username: config.username,
+        password: config.password,
+        base_topic: config.baseTopic,
+      });
     } else {
-      this.disconnect();
-      this.broadcastStatus();
+      this.addHub({
+        name: 'Coordinator 1 (Primary)',
+        enabled: config.enabled,
+        broker_url: config.brokerUrl,
+        username: config.username,
+        password: config.password,
+        base_topic: config.baseTopic,
+      });
     }
   }
 
-  // Auto-import discovered Zigbee devices into room
+  public broadcastStatus() {
+    liveSync.broadcast('z2m_status_changed', this.getStatus());
+  }
+
+  // Auto-import discovered devices across all coordinators
   public autoImportDevices(floorId?: string, roomId?: string) {
     const discovered = this.getDiscoveredDevices().filter((d) => d.type !== 'Coordinator');
     if (discovered.length === 0) {
-      return { imported: 0, message: 'No non-coordinator Zigbee devices found to import' };
+      return { count: 0, message: 'No devices found to import' };
     }
 
-    // Ensure floor exists
-    let targetFloorId = floorId;
-    if (!targetFloorId) {
-      const firstFloor = db.prepare('SELECT id FROM floors LIMIT 1').get() as { id: string } | undefined;
-      targetFloorId = firstFloor?.id;
-    }
-
-    if (!targetFloorId) {
-      targetFloorId = `floor_${crypto.randomBytes(3).toString('hex')}`;
-      db.prepare('INSERT INTO floors (id, name, slug) VALUES (?, ?, ?)').run(targetFloorId, 'Main Floor', 'main-floor');
-    }
-
-    // Ensure room exists
     let targetRoomId = roomId;
     if (!targetRoomId) {
-      const firstRoom = db.prepare('SELECT id FROM rooms WHERE floor_id = ? LIMIT 1').get(targetFloorId) as { id: string } | undefined;
-      targetRoomId = firstRoom?.id;
-    }
-
-    if (!targetRoomId) {
-      targetRoomId = `room_${crypto.randomBytes(3).toString('hex')}`;
-      db.prepare('INSERT INTO rooms (id, floor_id, name, slug) VALUES (?, ?, ?, ?)').run(
-        targetRoomId,
-        targetFloorId,
-        'Zigbee Devices',
-        'zigbee-devices'
-      );
+      let firstRoom = db.prepare('SELECT id FROM rooms ORDER BY sort_order ASC, name ASC LIMIT 1').get() as { id: string } | undefined;
+      if (!firstRoom) {
+        let firstFloor = db.prepare('SELECT id FROM floors ORDER BY sort_order ASC LIMIT 1').get() as { id: string } | undefined;
+        if (!firstFloor) {
+          const fid = `floor_${crypto.randomBytes(4).toString('hex')}`;
+          db.prepare('INSERT INTO floors (id, name, slug) VALUES (?, ?, ?)').run(fid, 'Floor 1', 'floor1');
+          firstFloor = { id: fid };
+        }
+        const rid = `room_${crypto.randomBytes(4).toString('hex')}`;
+        db.prepare('INSERT INTO rooms (id, floor_id, name, slug) VALUES (?, ?, ?, ?)').run(rid, firstFloor.id, 'Main Office', 'main_office');
+        firstRoom = { id: rid };
+      }
+      targetRoomId = firstRoom.id;
     }
 
     let importedCount = 0;
 
     for (const d of discovered) {
-      // Check if already mapped by friendly_name or ieee_address
       const existing = db.prepare('SELECT id FROM devices WHERE z2m_friendly_name = ? OR z2m_friendly_name = ? OR name = ?').get(
         d.friendly_name,
         d.ieee_address,
@@ -472,7 +708,6 @@ class MqttService {
 
       if (existing) continue;
 
-      // Determine device type from exposes definition
       let devType = 'switch_light';
       const exposes = d.definition?.exposes || [];
       const hasLight = exposes.some((e: any) => e.type === 'light' || e.features?.some((f: any) => f.name === 'brightness'));
@@ -499,7 +734,6 @@ class MqttService {
         devType = 'climate';
       }
 
-      // Friendly display name
       let displayName = d.friendly_name;
       if (displayName.startsWith('0x') && d.definition?.description) {
         displayName = d.definition.description;
@@ -509,6 +743,9 @@ class MqttService {
       const devConfig = JSON.stringify({
         z2m_friendly_name: d.friendly_name,
         z2m_ieee: d.ieee_address,
+        z2m_base_topic: d.base_topic,
+        z2m_hub_id: d.hub_id,
+        z2m_hub_name: d.hub_name,
         vendor: d.definition?.vendor || '',
         model: d.definition?.model || '',
         enabled_controls: hasLight
@@ -528,10 +765,15 @@ class MqttService {
       importedCount++;
     }
 
-    liveSync.broadcast('bootstrap_updated');
-    return { imported: importedCount, totalDiscovered: discovered.length };
+    if (importedCount > 0) {
+      liveSync.broadcast('bootstrap_updated');
+    }
+
+    return {
+      count: importedCount,
+      message: `Successfully imported ${importedCount} Zigbee devices into room`,
+    };
   }
 }
 
 export const mqttService = new MqttService();
-

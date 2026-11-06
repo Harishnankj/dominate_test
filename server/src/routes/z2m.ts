@@ -14,7 +14,7 @@ router.get('/status', (req, res) => {
   }
 });
 
-// 2. Get list of discovered Zigbee devices
+// 2. Get list of discovered Zigbee devices across all coordinators
 router.get('/devices', (req, res) => {
   try {
     const devices = mqttService.getDiscoveredDevices();
@@ -24,7 +24,63 @@ router.get('/devices', (req, res) => {
   }
 });
 
-// 3. Set Device State directly via Zigbee2MQTT
+// 3. Multi-Coordinator Hub Management
+router.get('/hubs', (req, res) => {
+  try {
+    const hubs = mqttService.getHubs();
+    return res.json({ ok: true, hubs });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/hubs', (req, res) => {
+  try {
+    const { name, broker_url, base_topic, username, password, enabled } = req.body;
+    if (!name || !broker_url) {
+      return res.status(400).json({ error: 'Name and Broker URL are required' });
+    }
+    const hub = mqttService.addHub({
+      name,
+      broker_url,
+      base_topic,
+      username,
+      password,
+      enabled: enabled !== undefined ? Boolean(enabled) : true,
+    });
+    return res.json({ ok: true, hub });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/hubs/:id', (req, res) => {
+  try {
+    const { name, broker_url, base_topic, username, password, enabled } = req.body;
+    const hub = mqttService.updateHub(req.params.id, {
+      name,
+      broker_url,
+      base_topic,
+      username,
+      password,
+      enabled: enabled !== undefined ? Boolean(enabled) : undefined,
+    });
+    return res.json({ ok: true, hub });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/hubs/:id', (req, res) => {
+  try {
+    mqttService.deleteHub(req.params.id);
+    return res.json({ ok: true });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// 4. Set Device State directly via Zigbee2MQTT
 router.post('/set', async (req, res) => {
   try {
     const { friendly_name, state } = req.body;
@@ -42,7 +98,7 @@ router.post('/set', async (req, res) => {
   }
 });
 
-// 4. Update MQTT Broker Settings & Reconnect
+// 5. Update Legacy MQTT Broker Settings & Reconnect
 router.post('/config', (req, res) => {
   try {
     const { enabled, brokerUrl, username, password, baseTopic } = req.body;
@@ -60,18 +116,19 @@ router.post('/config', (req, res) => {
   }
 });
 
-// 5. Toggle Permit Join (Pairing Mode)
+// 6. Toggle Permit Join (Pairing Mode) on all coordinators or a specific one
 router.post('/permit-join', async (req, res) => {
   try {
     const time = typeof req.body.time === 'number' ? req.body.time : 254;
-    await mqttService.permitJoin(time);
+    const hubId = req.body.hubId || undefined;
+    await mqttService.permitJoin(time, hubId);
     return res.json({ ok: true, time, permit_join: time > 0 });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-// 6. 1-Click Auto-Import Discovered Zigbee Devices
+// 7. 1-Click Auto-Import Discovered Zigbee Devices from all coordinators
 router.post('/auto-import', (req, res) => {
   try {
     const { floorId, roomId } = req.body;
@@ -83,4 +140,3 @@ router.post('/auto-import', (req, res) => {
 });
 
 export default router;
-

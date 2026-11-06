@@ -21,6 +21,7 @@ export interface BuildingConfig {
   ttlock_password?: string;
   ttlock_h5_secret?: string;
   ttlock_legacy_url?: string;
+  ttlock_authenticated?: boolean;
   mqtt_enabled?: number;
   mqtt_broker_url?: string;
   mqtt_username?: string;
@@ -199,6 +200,24 @@ export interface Z2mDevice {
   linkquality?: number;
   disabled?: boolean;
   last_seen?: string;
+  base_topic?: string;
+  hub_id?: string;
+  hub_name?: string;
+}
+
+export interface Z2mHub {
+  id: string;
+  name: string;
+  broker_url: string;
+  base_topic: string;
+  username?: string;
+  password?: string;
+  enabled: boolean;
+  sort_order?: number;
+  connected?: boolean;
+  bridgeState?: 'online' | 'offline' | 'unknown';
+  devicesCount?: number;
+  lastError?: string | null;
 }
 
 export interface Z2mStatus {
@@ -209,6 +228,7 @@ export interface Z2mStatus {
   devicesCount: number;
   bridgeState: 'online' | 'offline' | 'unknown';
   lastError: string | null;
+  hubs?: Z2mHub[];
 }
 
 export interface TuyaDevice {

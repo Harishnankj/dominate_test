@@ -18,6 +18,7 @@ export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
   try { devConfig = JSON.parse(device.config_json || '{}'); } catch (_) {}
   const z2mName = device.z2m_friendly_name || devConfig.z2m_friendly_name;
   const z2mState = z2mName ? getZ2mState(z2mName) : undefined;
+  const endpoint = devConfig.endpoint || (device.name.match(/switch\s*(\d+)/i) ? `l${device.name.match(/switch\s*(\d+)/i)?.[1]}` : undefined);
 
   const tuyaId = device.tuya_device_id || devConfig.tuya_device_id;
   const tuyaState = tuyaId ? getTuyaState(tuyaId) : undefined;
@@ -26,6 +27,8 @@ export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
   let effectiveState = 'off';
   if (haState !== 'unavailable') {
     effectiveState = haState;
+  } else if (endpoint && z2mState?.[`state_${endpoint}`]) {
+    effectiveState = String(z2mState[`state_${endpoint}`]).toLowerCase();
   } else if (z2mState?.state) {
     effectiveState = z2mState.state.toLowerCase();
   } else if (tuyaState) {
@@ -49,7 +52,11 @@ export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
 
     // If HA is unavailable or device has no entity_id, control via Z2M directly
     if (z2mName && (haState === 'unavailable' || !device.entity_id)) {
-      await setZ2mState(z2mName, { state: isOn ? 'OFF' : 'ON' });
+      if (endpoint) {
+        await setZ2mState(z2mName, { [`state_${endpoint}`]: isOn ? 'OFF' : 'ON' });
+      } else {
+        await setZ2mState(z2mName, { state: isOn ? 'OFF' : 'ON' });
+      }
       return;
     }
 
@@ -60,7 +67,11 @@ export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
       if (tuyaId) {
         await setTuyaState(tuyaId, { switch_1: !isOn, state: !isOn ? 'ON' : 'OFF' });
       } else if (z2mName) {
-        await setZ2mState(z2mName, { state: isOn ? 'OFF' : 'ON' });
+        if (endpoint) {
+          await setZ2mState(z2mName, { [`state_${endpoint}`]: isOn ? 'OFF' : 'ON' });
+        } else {
+          await setZ2mState(z2mName, { state: isOn ? 'OFF' : 'ON' });
+        }
       }
     }
   };

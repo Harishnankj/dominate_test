@@ -24,3 +24,7 @@ streams:
     - rtsp://192.168.0.159:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel0#tcp#backchannel=0
   cam5:
     - rtsp://admin:brvksn@192.168.0.118:8000:554/Streaming/Channels/102#tcp#backchannel=0
+  cam6:
+    - rtsp://192.168.0.154:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel1#tcp#backchannel=0
+  cam6F:
+    - rtsp://192.168.0.154:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel0#tcp#backchannel=0

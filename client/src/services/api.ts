@@ -286,6 +286,30 @@ export class ApiService {
     });
   }
 
+  static async getZ2mHubs(): Promise<{ ok: boolean; hubs: import('../types').Z2mHub[] }> {
+    return this.request('/api/z2m/hubs');
+  }
+
+  static async createZ2mHub(data: Partial<import('../types').Z2mHub>): Promise<{ ok: boolean; hub: import('../types').Z2mHub }> {
+    return this.request('/api/z2m/hubs', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  static async updateZ2mHub(id: string, data: Partial<import('../types').Z2mHub>): Promise<{ ok: boolean; hub: import('../types').Z2mHub }> {
+    return this.request(`/api/z2m/hubs/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  static async deleteZ2mHub(id: string): Promise<{ ok: boolean }> {
+    return this.request(`/api/z2m/hubs/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   static async updateZ2mConfig(data: {
     enabled: boolean;
     brokerUrl: string;
@@ -299,10 +323,10 @@ export class ApiService {
     });
   }
 
-  static async setZ2mPermitJoin(time: number = 254): Promise<{ ok: boolean; permit_join: boolean }> {
+  static async setZ2mPermitJoin(time: number = 254, hubId?: string): Promise<{ ok: boolean; permit_join: boolean }> {
     return this.request('/api/z2m/permit-join', {
       method: 'POST',
-      body: JSON.stringify({ time }),
+      body: JSON.stringify({ time, hubId }),
     });
   }
 

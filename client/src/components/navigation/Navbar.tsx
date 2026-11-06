@@ -35,7 +35,11 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { data, isLiveSyncConnected, z2mStatus, tuyaStatus } = useBootstrap();
   const { user, logout, isAdmin } = useAuth();
-  const { isConnected: isHaConnected } = useHA();
+  const { hubs: haHubs } = useHA();
+
+  const enabledHaHubs = (data?.hubs || []).filter((h) => h.enabled);
+  const connectedHaCount = Object.values(haHubs).filter((h) => h.isConnected).length;
+  const isHaConnected = connectedHaCount > 0;
 
   const [weather, setWeather] = useState<{ temp: number; label: string }>({ temp: 28, label: 'HQ' });
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -81,8 +85,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
               <span className="flex items-center gap-1 font-mono text-[11px]">
                 {isHaConnected ? (
-                  <span className="text-emerald-400 flex items-center gap-1">
-                    <Wifi className="w-3 h-3" /> HA Active
+                  <span className="text-emerald-400 flex items-center gap-1 font-mono text-[11px]">
+                    <Wifi className="w-3 h-3" />{' '}
+                    {enabledHaHubs.length > 1
+                      ? `HA Active (${connectedHaCount}/${enabledHaHubs.length})`
+                      : 'HA Active'}
                   </span>
                 ) : (
                   <span className="text-slate-400 flex items-center gap-1" title="Home Assistant offline - local direct Zigbee & Tuya active">

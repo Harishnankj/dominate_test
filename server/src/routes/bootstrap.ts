@@ -33,6 +33,7 @@ router.get('/', (req, res) => {
 
     // Filter sensitive config fields for public bootstrap
     const safeConfig = { ...config };
+    safeConfig.ttlock_authenticated = Boolean(config.ttlock_access_token && Number(config.ttlock_token_expiry) > Date.now());
     delete safeConfig.ttlock_password_md5;
     delete safeConfig.ttlock_access_token;
     delete safeConfig.hr_auth_token;

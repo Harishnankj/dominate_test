@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import basicSsl from '@vitejs/plugin-basic-ssl';
 
 // Catch transient socket drops in dev mode so Vite dev server never exits
 if (typeof process !== 'undefined') {
@@ -37,6 +38,11 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    headers: {
+      'Permissions-Policy': 'microphone=*, camera=*, geolocation=*',
+      'Feature-Policy': 'microphone *; camera *; geolocation *',
+      'Access-Control-Allow-Origin': '*',
+    },
     proxy: {
       '/api/ws': {
         target: 'http://127.0.0.1:1984',

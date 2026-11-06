@@ -264,10 +264,41 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   );
 
   const getZ2mState = useCallback(
-    (friendlyName: string) => {
-      return z2mStates[friendlyName];
+    (friendlyNameOrKey: string) => {
+      if (!friendlyNameOrKey) return undefined;
+      let direct = z2mStates[friendlyNameOrKey];
+
+      // Match corresponding IEEE or friendly name from z2mDevices
+      const dev = z2mDevices.find(
+        (d) =>
+          d.friendly_name?.toLowerCase() === friendlyNameOrKey.toLowerCase() ||
+          d.ieee_address?.toLowerCase() === friendlyNameOrKey.toLowerCase()
+      );
+
+      let altState: Record<string, any> | undefined;
+      if (dev) {
+        if (dev.ieee_address && z2mStates[dev.ieee_address]) {
+          altState = { ...altState, ...z2mStates[dev.ieee_address] };
+        }
+        if (dev.friendly_name && z2mStates[dev.friendly_name]) {
+          altState = { ...altState, ...z2mStates[dev.friendly_name] };
+        }
+      }
+
+      // Case-insensitive fallback
+      if (!direct && !altState) {
+        const foundKey = Object.keys(z2mStates).find(
+          (k) => k.toLowerCase() === friendlyNameOrKey.toLowerCase()
+        );
+        if (foundKey) direct = z2mStates[foundKey];
+      }
+
+      if (direct || altState) {
+        return { ...(altState || {}), ...(direct || {}) };
+      }
+      return undefined;
     },
-    [z2mStates]
+    [z2mStates, z2mDevices]
   );
 
   const getZ2mDevice = useCallback(

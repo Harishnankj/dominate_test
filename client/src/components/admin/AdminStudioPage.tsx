@@ -38,6 +38,12 @@ import {
   ToggleLeft,
   ToggleRight,
   Power,
+  HelpCircle,
+  Unlock,
+  Battery,
+  Key,
+  ShieldCheck,
+  Activity,
 } from 'lucide-react';
 import { useBootstrap } from '../../context/BootstrapContext';
 import { ApiService } from '../../services/api';
@@ -131,9 +137,19 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
   // Camera Modal
   const [editingCamera, setEditingCamera] = useState<Partial<Camera> | null>(null);
 
-  // TTLock Test
+  // TTLock State
+  const [ttlockClientId, setTtlockClientId] = useState(data?.config?.ttlock_client_id || '');
+  const [ttlockClientSecret, setTtlockClientSecret] = useState(data?.config?.ttlock_client_secret || '');
+  const [ttlockUsername, setTtlockUsername] = useState(data?.config?.ttlock_username || '');
+  const [ttlockPassword, setTtlockPassword] = useState('');
+  const [ttlockLegacyUrl, setTtlockLegacyUrl] = useState(data?.config?.ttlock_legacy_url || '');
+  const [showTtlockSecret, setShowTtlockSecret] = useState(false);
+  const [showTtlockPassword, setShowTtlockPassword] = useState(false);
+  const [showTtlockGuide, setShowTtlockGuide] = useState(false);
   const [syncingTtlock, setSyncingTtlock] = useState(false);
   const [ttlockResult, setTtlockResult] = useState<any>(null);
+  const [testingUnlockLockId, setTestingUnlockLockId] = useState('');
+  const [unlockingLockId, setUnlockingLockId] = useState<string | number | null>(null);
 
   // Building Settings
   const [buildingName, setBuildingName] = useState(data?.config?.building_name || 'Smart Office');
@@ -152,23 +168,37 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
   const [z2mEnabled, setZ2mEnabled] = useState(data?.config?.mqtt_enabled === 1);
   const [z2mStatusData, setZ2mStatusData] = useState<import('../../types').Z2mStatus | null>(null);
   const [z2mDevicesList, setZ2mDevicesList] = useState<import('../../types').Z2mDevice[]>([]);
+  const [z2mHubs, setZ2mHubs] = useState<import('../../types').Z2mHub[]>([]);
+  const [editingZ2mHub, setEditingZ2mHub] = useState<Partial<import('../../types').Z2mHub> | null>(null);
+  const [savingZ2mHub, setSavingZ2mHub] = useState(false);
   const [loadingZ2m, setLoadingZ2m] = useState(false);
   const [savingZ2mConfig, setSavingZ2mConfig] = useState(false);
   const [permitJoinTimer, setPermitJoinTimer] = useState<number>(0);
+  const [activePermitHubId, setActivePermitHubId] = useState<string | null>(null);
   const [autoImportingZ2m, setAutoImportingZ2m] = useState(false);
+  const [z2mFilterHubId, setZ2mFilterHubId] = useState<string>('all');
+  const [z2mSearchQuery, setZ2mSearchQuery] = useState('');
+  const [showZ2mGuide, setShowZ2mGuide] = useState(false);
 
   const fetchZ2mInfo = React.useCallback(async () => {
     setLoadingZ2m(true);
     try {
-      const [statusRes, devicesRes] = await Promise.all([
+      const [statusRes, devicesRes, hubsRes] = await Promise.all([
         ApiService.getZ2mStatus().catch(() => null),
         ApiService.getZ2mDevices().catch(() => null),
+        ApiService.getZ2mHubs().catch(() => null),
       ]);
       if (statusRes?.ok) {
         setZ2mStatusData(statusRes.status);
         if (statusRes.status.brokerUrl) setZ2mBrokerUrl(statusRes.status.brokerUrl);
         if (statusRes.status.baseTopic) setZ2mBaseTopic(statusRes.status.baseTopic);
         setZ2mEnabled(statusRes.status.enabled);
+        if (statusRes.status.hubs && statusRes.status.hubs.length > 0) {
+          setZ2mHubs(statusRes.status.hubs);
+        }
+      }
+      if (hubsRes?.ok && hubsRes.hubs) {
+        setZ2mHubs(hubsRes.hubs);
       }
       if (devicesRes?.ok) {
         setZ2mDevicesList(devicesRes.devices || []);
@@ -221,13 +251,72 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
     }
   };
 
-  const handleTogglePermitJoin = async () => {
+  const handleSaveZ2mHub = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingZ2mHub?.name || !editingZ2mHub?.broker_url) {
+      showStatus('Coordinator Name and Broker URL are required', true);
+      return;
+    }
+    setSavingZ2mHub(true);
+    try {
+      if (editingZ2mHub.id) {
+        await ApiService.updateZ2mHub(editingZ2mHub.id, editingZ2mHub);
+        showStatus(`Coordinator "${editingZ2mHub.name}" updated successfully`);
+      } else {
+        await ApiService.createZ2mHub({
+          ...editingZ2mHub,
+          base_topic: (editingZ2mHub.base_topic || `zigbee2mqtt_${z2mHubs.length + 1}`).trim(),
+          enabled: editingZ2mHub.enabled !== undefined ? editingZ2mHub.enabled : true,
+        });
+        showStatus(`New Zigbee Coordinator "${editingZ2mHub.name}" added and connected!`);
+      }
+      setEditingZ2mHub(null);
+      await fetchZ2mInfo();
+      await refreshBootstrap();
+    } catch (err: any) {
+      showStatus(err.message, true);
+    } finally {
+      setSavingZ2mHub(false);
+    }
+  };
+
+  const handleDeleteZ2mHub = async (hubId: string, hubName: string) => {
+    if (!window.confirm(`Are you sure you want to remove "${hubName}"? Existing mapped devices will remain in your database.`)) {
+      return;
+    }
+    try {
+      const res = await ApiService.deleteZ2mHub(hubId);
+      if (res.ok) {
+        showStatus(`Removed coordinator "${hubName}"`);
+        await fetchZ2mInfo();
+        await refreshBootstrap();
+      } else {
+        showStatus('Failed to remove coordinator', true);
+      }
+    } catch (err: any) {
+      showStatus(err.message, true);
+    }
+  };
+
+  const handleToggleHubEnabled = async (hub: import('../../types').Z2mHub) => {
+    try {
+      await ApiService.updateZ2mHub(hub.id, { enabled: !hub.enabled });
+      showStatus(`${hub.name} ${!hub.enabled ? 'enabled' : 'disabled'}`);
+      await fetchZ2mInfo();
+    } catch (err: any) {
+      showStatus(err.message, true);
+    }
+  };
+
+  const handleTogglePermitJoin = async (hubId?: string) => {
     try {
       const nextTime = permitJoinTimer > 0 ? 0 : 254;
-      const res = await ApiService.setZ2mPermitJoin(nextTime);
+      const res = await ApiService.setZ2mPermitJoin(nextTime, hubId);
       if (res.ok) {
         setPermitJoinTimer(nextTime);
-        showStatus(nextTime > 0 ? 'Zigbee pairing mode active for 254s' : 'Pairing mode stopped');
+        setActivePermitHubId(nextTime > 0 ? (hubId || 'all') : null);
+        const targetName = hubId ? z2mHubs.find((h) => h.id === hubId)?.name || 'coordinator' : 'all coordinators';
+        showStatus(nextTime > 0 ? `Zigbee pairing mode active for 254s on ${targetName}` : 'Pairing mode stopped');
       }
     } catch (err: any) {
       showStatus(err.message, true);
@@ -252,12 +341,17 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
     }
   };
 
+  const [testingToggleDev, setTestingToggleDev] = useState<string | null>(null);
+
   const handleTestZ2mToggle = async (friendlyName: string) => {
     try {
+      setTestingToggleDev(friendlyName);
       await ApiService.setZ2mDeviceState(friendlyName, { state: 'TOGGLE' });
-      showStatus(`Toggled ${friendlyName}`);
+      showStatus(`Toggled ${friendlyName} successfully`);
     } catch (err: any) {
-      showStatus(err.message, true);
+      showStatus(err.message || 'Failed to toggle device', true);
+    } finally {
+      setTestingToggleDev(null);
     }
   };
 
@@ -840,20 +934,89 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
     }
   };
 
-  // 3. TTLock Sync
-  const handleSyncTtlock = async () => {
+  const handleDeleteIrProfile = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete IR profile "${name}"?`)) return;
+    try {
+      const res = await ApiService.deleteIrProfile(id);
+      if (res.ok) {
+        showStatus(`Deleted IR profile "${name}"`);
+        await refreshBootstrap();
+      } else {
+        showStatus('Failed to delete IR profile', true);
+      }
+    } catch (err: any) {
+      showStatus(err.message, true);
+    }
+  };
+
+  // 3. TTLock Sync & Unlock
+  const handleSyncTtlock = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cId = ttlockClientId.trim();
+    const cSecret = ttlockClientSecret.trim();
+    const uName = ttlockUsername.trim();
+
+    if (!cId || !cSecret || !uName) {
+      showStatus('Please provide TTLock Client ID, Client Secret, and Account Username', true);
+      return;
+    }
+
     setSyncingTtlock(true);
     setTtlockResult(null);
     try {
-      const res = await ApiService.testTtlock({});
+      const res = await ApiService.testTtlock({
+        client_id: cId,
+        client_secret: cSecret,
+        username: uName,
+        password: ttlockPassword ? ttlockPassword.trim() : undefined,
+      });
       setTtlockResult(res);
       await refreshBootstrap();
-      showStatus(res.ok ? `Synced ${res.totalLocks} locks` : res.error, !res.ok);
+      if (res.ok) {
+        showStatus(`Connected! Synced ${res.totalLocks} locks from TTLock Cloud.`);
+      } else {
+        showStatus(`TTLock error: ${res.error || 'Authentication failed'}`, true);
+      }
     } catch (err: any) {
       showStatus(err.message, true);
     } finally {
       setSyncingTtlock(false);
     }
+  };
+
+  const handleTestUnlock = async (lockId: string | number) => {
+    setUnlockingLockId(lockId);
+    try {
+      const res = await ApiService.unlockTtlock(lockId);
+      if (res.ok) {
+        showStatus(`Remote unlock signal sent to Lock ${lockId}!`);
+      } else {
+        showStatus(res.message || 'Unlock signal failed', true);
+      }
+    } catch (err: any) {
+      showStatus(err.message, true);
+    } finally {
+      setUnlockingLockId(null);
+    }
+  };
+
+  const handleMapLockToRoom = (lock: any) => {
+    const targetRoom = data?.rooms?.[0];
+    setEditingDevice({
+      id: '',
+      room_id: targetRoom?.id || '',
+      type: 'ttlock',
+      name: lock.lockName || `Lock ${lock.lockId}`,
+      entity_id: String(lock.lockId),
+      config_json: JSON.stringify({
+        lockId: lock.lockId,
+        lockMac: lock.lockMac,
+        hasGateway: lock.hasGateway,
+      }),
+      show_on_default_dashboard: 1,
+      sort_order: 0,
+    } as Device);
+    setDeviceModalOpen(true);
   };
 
   // 4. Save Building Settings
@@ -1190,24 +1353,43 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <Radio className="w-5 h-5 text-cyan-400" /> Zigbee2MQTT & Direct MQTT Hub
+                    <Radio className="w-5 h-5 text-cyan-400" /> Zigbee2MQTT &amp; Direct MQTT Hub
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Direct local coordinator control with zero Home Assistant dependency & automatic failover
+                    Connect multiple Zigbee coordinators simultaneously with independent PAN networks &amp; automatic failover
                   </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
                   <button
-                    onClick={handleTogglePermitJoin}
+                    onClick={() => {
+                      const nextIndex = z2mHubs.length + 1;
+                      const primaryBroker = z2mHubs[0]?.broker_url || z2mBrokerUrl || 'mqtt://192.168.0.180:1883';
+                      setEditingZ2mHub({
+                        name: `Coordinator ${nextIndex}`,
+                        broker_url: primaryBroker,
+                        base_topic: `zigbee2mqtt_${nextIndex}`,
+                        enabled: true,
+                      });
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-400 to-brand-500 text-slate-950 font-bold text-xs tracking-wide shadow-glow flex items-center gap-1.5 transition-all"
+                  >
+                    <Plus className="w-4 h-4" /> Add Coordinator
+                  </button>
+
+                  <button
+                    onClick={() => handleTogglePermitJoin()}
                     className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
-                      permitJoinTimer > 0
+                      permitJoinTimer > 0 && (!activePermitHubId || activePermitHubId === 'all')
                         ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
                         : 'bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/30'
                     }`}
+                    title="Allow pairing on all coordinators simultaneously"
                   >
                     <Radio className="w-4 h-4" />
-                    {permitJoinTimer > 0 ? `Pairing Active (${permitJoinTimer}s)` : 'Enable Pairing (254s)'}
+                    {permitJoinTimer > 0 && (!activePermitHubId || activePermitHubId === 'all')
+                      ? `Pairing All (${permitJoinTimer}s)`
+                      : 'Pair All (254s)'}
                   </button>
 
                   <button
@@ -1216,7 +1398,20 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                     className="px-3.5 py-2 rounded-xl bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-300 text-xs font-bold border border-cyan-500/30 flex items-center gap-1.5 transition-all disabled:opacity-50"
                   >
                     {autoImportingZ2m ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                    1-Click Auto-Import Devices
+                    1-Click Auto-Import All Devices
+                  </button>
+
+                  <button
+                    onClick={() => setShowZ2mGuide(!showZ2mGuide)}
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all ${
+                      showZ2mGuide
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-white/10'
+                    }`}
+                    title="Toggle 2-Coordinator Hardware & Config Guide"
+                  >
+                    <HelpCircle className="w-4 h-4" />
+                    2-Dongle Guide
                   </button>
 
                   <button
@@ -1230,47 +1425,117 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                 </div>
               </div>
 
-              {/* Status Overview Cards */}
+              {/* 2-Coordinator Setup & Hardware Guide Banner */}
+              {showZ2mGuide && (
+                <div className="glass-panel p-5 rounded-2xl border border-cyan-500/30 bg-cyan-950/20 space-y-4 animate-in fade-in">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
+                        <Radio className="w-4 h-4" />
+                      </div>
+                      <h4 className="text-sm font-bold text-white">How to Run 2 Zigbee Coordinators Simultaneously</h4>
+                    </div>
+                    <button
+                      onClick={() => setShowZ2mGuide(false)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-white"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    A single Zigbee PAN network allows strictly <strong>one coordinator</strong>. When you plug in 2 USB coordinator dongles (e.g. Sonoff ZBDongle-E/P, ConBee, SLZB), each dongle runs as an isolated Zigbee network on a distinct radio channel, publishing to your MQTT broker under a separate base topic.
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Coordinator 1 config */}
+                    <div className="bg-slate-950/70 p-3.5 rounded-xl border border-white/10 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-cyan-300">Coordinator 1 (Instance 1)</span>
+                        <span className="text-[10px] font-mono text-slate-400">/opt/zigbee2mqtt/data/configuration.yaml</span>
+                      </div>
+                      <pre className="text-[11px] font-mono text-slate-300 bg-slate-900/90 p-2.5 rounded-lg overflow-x-auto leading-relaxed">
+{`mqtt:
+  base_topic: zigbee2mqtt
+  server: 'mqtt://192.168.0.180:1883'
+serial:
+  port: /dev/ttyUSB0   # or COM3
+advanced:
+  pan_id: 6754
+  channel: 11`}
+                      </pre>
+                    </div>
+
+                    {/* Coordinator 2 config */}
+                    <div className="bg-slate-950/70 p-3.5 rounded-xl border border-white/10 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-emerald-300">Coordinator 2 (Instance 2)</span>
+                        <span className="text-[10px] font-mono text-slate-400">/opt/zigbee2mqtt-2/data/configuration.yaml</span>
+                      </div>
+                      <pre className="text-[11px] font-mono text-slate-300 bg-slate-900/90 p-2.5 rounded-lg overflow-x-auto leading-relaxed">
+{`mqtt:
+  base_topic: zigbee2mqtt_2   # Distinct topic!
+  server: 'mqtt://192.168.0.180:1883'
+serial:
+  port: /dev/ttyUSB1   # or COM4
+advanced:
+  pan_id: 6755        # Distinct PAN ID!
+  channel: 15         # Channel 15, 20 or 25`}
+                      </pre>
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-slate-300 space-y-1">
+                    <p>
+                      <strong>How DOMINATEE OS handles this:</strong> Both coordinators connect to DOMINATEE in parallel. When you click <strong>"+ Add Coordinator"</strong> below, DOMINATEE connects to <code className="text-cyan-400">zigbee2mqtt_2</code> alongside <code className="text-cyan-400">zigbee2mqtt</code>. Devices discovered on either dongle appear with a badge, auto-import into rooms, and route commands to the right coordinator automatically!
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Status Overview Metric Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="glass-panel p-4 rounded-2xl border border-white/10 flex items-center justify-between">
                   <div>
-                    <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">MQTT Broker</span>
-                    <span className="text-xs font-mono font-bold text-white mt-0.5 block truncate max-w-[170px]">
-                      {z2mBrokerUrl}
+                    <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Connected Coordinators</span>
+                    <span className="text-sm font-bold text-white mt-0.5 block">
+                      {z2mHubs.filter((h) => h.connected).length} / {Math.max(z2mHubs.length, 1)} Online
                     </span>
                   </div>
                   <span
                     className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                      z2mStatusData?.connected
+                      z2mHubs.some((h) => h.connected)
                         ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-glow-emerald'
                         : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
                     }`}
                   >
-                    {z2mStatusData?.connected ? 'CONNECTED' : 'OFFLINE'}
+                    {z2mHubs.some((h) => h.connected) ? `${z2mHubs.filter((h) => h.connected).length} ACTIVE` : 'ALL OFFLINE'}
                   </span>
                 </div>
 
                 <div className="glass-panel p-4 rounded-2xl border border-white/10 flex items-center justify-between">
                   <div>
                     <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Bridge Status</span>
-                    <span className="text-xs font-mono font-bold text-white mt-0.5 block">
-                      Topic: {z2mBaseTopic}
+                    <span className="text-xs font-mono font-bold text-white mt-0.5 block truncate max-w-[170px]">
+                      {z2mHubs.map((h) => h.base_topic).filter(Boolean).join(', ') || z2mBaseTopic}
                     </span>
                   </div>
                   <span
                     className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                      z2mStatusData?.bridgeState === 'online'
+                      z2mHubs.some((h) => h.bridgeState === 'online') || z2mStatusData?.bridgeState === 'online'
                         ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                         : 'bg-slate-800 text-slate-400 border border-white/5'
                     }`}
                   >
-                    {z2mStatusData?.bridgeState === 'online' ? 'BRIDGE ONLINE' : (z2mStatusData?.bridgeState || 'UNKNOWN')}
+                    {z2mHubs.some((h) => h.bridgeState === 'online') || z2mStatusData?.bridgeState === 'online'
+                      ? 'BRIDGE ONLINE'
+                      : 'OFFLINE'}
                   </span>
                 </div>
 
                 <div className="glass-panel p-4 rounded-2xl border border-white/10 flex items-center justify-between">
                   <div>
-                    <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Discovered Devices</span>
+                    <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Total Discovered Devices</span>
                     <span className="text-xs font-mono font-bold text-white mt-0.5 block">
                       {z2mDevicesList.filter((d) => d.type !== 'Coordinator').length} End Devices / Routers
                     </span>
@@ -1281,141 +1546,366 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                 </div>
               </div>
 
-              {/* MQTT Broker Settings Form */}
-              <form onSubmit={handleSaveZ2mConfig} className="glass-panel p-5 rounded-2xl border border-white/10 space-y-4">
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Cpu className="w-4 h-4 text-cyan-400" /> MQTT Broker Connection Settings
-                  </h4>
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-300">
-                    <input
-                      type="checkbox"
-                      checked={z2mEnabled}
-                      onChange={(e) => setZ2mEnabled(e.target.checked)}
-                      className="w-4 h-4 rounded text-cyan-500 bg-slate-900 border-white/20 focus:ring-cyan-500"
-                    />
-                    <span>Enable Zigbee2MQTT</span>
-                  </label>
-                </div>
-
-                {/* Quick Auto-Fill Buttons */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] font-mono text-slate-400">Quick Connect:</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setZ2mBrokerUrl('mqtt://192.168.0.180:1883');
-                      setZ2mEnabled(true);
-                    }}
-                    className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 text-[11px] font-mono flex items-center gap-1 transition-all"
-                  >
-                    <Radio className="w-3 h-3 text-cyan-400" /> DOM Connect (192.168.0.180:1883)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setZ2mBrokerUrl('mqtt://127.0.0.1:1883');
-                      setZ2mEnabled(true);
-                    }}
-                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-white/10 text-[11px] font-mono flex items-center gap-1 transition-all"
-                  >
-                    Localhost (127.0.0.1:1883)
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                      Broker URL (e.g. mqtt://192.168.0.180:1883)
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={z2mBrokerUrl}
-                      onChange={(e) => {
-                        let val = e.target.value;
-                        // Auto-correct common web dashboard port 8085/8080 to mqtt port 1883
-                        if (val.includes(':8085') || val.includes(':8080')) {
-                          val = val.replace(/^https?:\/\//i, 'mqtt://').replace(/:808[0-9]/, ':1883');
-                        } else if (val.startsWith('http://') || val.startsWith('https://')) {
-                          val = val.replace(/^https?:\/\//i, 'mqtt://');
-                        }
-                        setZ2mBrokerUrl(val);
-                        setZ2mEnabled(true);
-                      }}
-                      placeholder="mqtt://192.168.0.180:1883"
-                      className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
-                    />
-                    <span className="text-[10px] text-slate-400 mt-1 block">
-                      Note: Web UI is port 8085, MQTT broker is port 1883.
-                    </span>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                      Base Topic (default: zigbee2mqtt)
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={z2mBaseTopic}
-                      onChange={(e) => setZ2mBaseTopic(e.target.value)}
-                      placeholder="zigbee2mqtt"
-                      className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                      Username (Optional)
-                    </label>
-                    <input
-                      type="text"
-                      value={z2mUsername}
-                      onChange={(e) => setZ2mUsername(e.target.value)}
-                      placeholder="Leave blank if no auth"
-                      className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                      Password (Optional)
-                    </label>
-                    <input
-                      type="password"
-                      value={z2mPassword}
-                      onChange={(e) => setZ2mPassword(e.target.value)}
-                      placeholder="Leave blank to keep"
-                      className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-2">
-                  <p className="text-[11px] text-slate-400">
-                    If Home Assistant goes down, devices mapped with Zigbee2MQTT will continue working instantly over MQTT.
-                  </p>
-                  <button
-                    type="submit"
-                    disabled={savingZ2mConfig}
-                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-400 to-brand-500 text-slate-950 font-bold text-xs shadow-glow flex items-center gap-1.5 transition-all shrink-0"
-                  >
-                    {savingZ2mConfig ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
-                    Save & Reconnect
-                  </button>
-                </div>
-              </form>
-
-              {/* Discovered Zigbee Devices */}
+              {/* Coordinators Grid */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Radio className="w-4 h-4 text-cyan-400" /> Discovered Zigbee Devices ({z2mDevicesList.length})
+                    <Radio className="w-4 h-4 text-cyan-400" />
+                    Zigbee Coordinators ({z2mHubs.length || 1})
                   </h4>
-                  <span className="text-[11px] font-mono text-slate-400">
-                    Auto-synchronized from <code className="text-cyan-400">{z2mBaseTopic}/bridge/devices</code>
+                  <span className="text-xs text-slate-400">
+                    Each coordinator operates an independent Zigbee PAN network
                   </span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3">
+                  {(z2mHubs.length > 0 ? z2mHubs : [
+                    {
+                      id: 'z2m_hub_1',
+                      name: 'Coordinator 1 (Primary)',
+                      broker_url: z2mBrokerUrl,
+                      base_topic: z2mBaseTopic,
+                      enabled: z2mEnabled,
+                      connected: z2mStatusData?.connected,
+                      bridgeState: z2mStatusData?.bridgeState,
+                      devicesCount: z2mDevicesList.length,
+                    } as import('../../types').Z2mHub
+                  ]).map((hub) => {
+                    const isPermitActive =
+                      permitJoinTimer > 0 && (activePermitHubId === hub.id || activePermitHubId === 'all');
+                    const hubDevCount = z2mDevicesList.filter(
+                      (d) => d.hub_id === hub.id || d.base_topic === hub.base_topic
+                    ).length;
+
+                    return (
+                      <div
+                        key={hub.id}
+                        className={`glass-panel p-4 rounded-2xl border transition-all ${
+                          hub.connected
+                            ? 'border-cyan-500/30 bg-slate-900/60 shadow-lg shadow-cyan-950/20'
+                            : 'border-white/10 bg-slate-900/40'
+                        }`}
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h5 className="font-bold text-white text-sm flex items-center gap-1.5">
+                                <Radio className={`w-4 h-4 ${hub.connected ? 'text-cyan-400' : 'text-slate-500'}`} />
+                                {hub.name}
+                              </h5>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                                  !hub.enabled
+                                    ? 'bg-slate-800 text-slate-500 border border-white/5'
+                                    : hub.connected
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                }`}
+                              >
+                                {!hub.enabled ? 'DISABLED' : hub.connected ? 'CONNECTED' : 'OFFLINE'}
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                                  hub.bridgeState === 'online'
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                    : 'bg-slate-800 text-slate-400 border border-white/5'
+                                }`}
+                              >
+                                {hub.bridgeState === 'online' ? 'BRIDGE ONLINE' : (hub.bridgeState || 'OFFLINE')}
+                              </span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-950/80 text-cyan-300 border border-cyan-800/40">
+                                Topic: {hub.base_topic}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-3 text-xs font-mono text-slate-400 flex-wrap">
+                              <span>{hub.broker_url}</span>
+                              <span className="text-slate-600">•</span>
+                              <span className="text-cyan-300 font-semibold">
+                                {hubDevCount} Discovered Devices
+                              </span>
+                            </div>
+
+                            {hub.lastError && (
+                              <p className="text-[11px] text-rose-400 font-mono">
+                                Error: {hub.lastError}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePermitJoin(hub.id)}
+                              disabled={!hub.connected}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-40 ${
+                                isPermitActive
+                                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
+                                  : 'bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/30'
+                              }`}
+                              title="Permit device pairing for 254 seconds on this coordinator only"
+                            >
+                              <Radio className="w-3.5 h-3.5" />
+                              {isPermitActive ? `Pairing (${permitJoinTimer}s)` : 'Pair Devices'}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleToggleHubEnabled(hub)}
+                              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300"
+                              title={hub.enabled ? 'Disable Coordinator' : 'Enable Coordinator'}
+                            >
+                              {hub.enabled ? (
+                                <ToggleRight className="w-4 h-4 text-emerald-400" />
+                              ) : (
+                                <ToggleLeft className="w-4 h-4 text-slate-500" />
+                              )}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setEditingZ2mHub(hub)}
+                              className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"
+                              title="Edit Coordinator Settings"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+
+                            {z2mHubs.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteZ2mHub(hub.id, hub.name)}
+                                className="p-2 rounded-xl bg-rose-500/20 text-rose-400 hover:bg-rose-500/30"
+                                title="Remove Coordinator"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Add / Edit Coordinator Form */}
+              {editingZ2mHub && (
+                <form
+                  onSubmit={handleSaveZ2mHub}
+                  className="glass-panel p-5 rounded-2xl border border-cyan-500/30 space-y-4 animate-in fade-in"
+                >
+                  <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Cpu className="w-4 h-4 text-cyan-400" />
+                      {editingZ2mHub.id ? 'Edit Zigbee Coordinator' : 'Add New Zigbee Coordinator'}
+                    </h4>
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={editingZ2mHub.enabled !== false}
+                        onChange={(e) => setEditingZ2mHub({ ...editingZ2mHub, enabled: e.target.checked })}
+                        className="w-4 h-4 rounded text-cyan-500 bg-slate-900 border-white/20 focus:ring-cyan-500"
+                      />
+                      <span>Enable Coordinator</span>
+                    </label>
+                  </div>
+
+                  {/* Quick Auto-Fill Buttons */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-mono text-slate-400">Quick Broker:</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingZ2mHub({ ...editingZ2mHub, broker_url: 'mqtt://192.168.0.180:1883' })
+                      }
+                      className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 text-[11px] font-mono flex items-center gap-1 transition-all"
+                    >
+                      <Radio className="w-3 h-3 text-cyan-400" /> DOM Connect (192.168.0.180:1883)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingZ2mHub({ ...editingZ2mHub, broker_url: 'mqtt://127.0.0.1:1883' })
+                      }
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-white/10 text-[11px] font-mono flex items-center gap-1 transition-all"
+                    >
+                      Localhost (127.0.0.1:1883)
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        Coordinator Name
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Coordinator 2 (Floor 2)"
+                        value={editingZ2mHub.name || ''}
+                        onChange={(e) => setEditingZ2mHub({ ...editingZ2mHub, name: e.target.value })}
+                        className="w-full glass-input rounded-xl px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        MQTT Broker URL
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="mqtt://192.168.0.180:1883"
+                        value={editingZ2mHub.broker_url || ''}
+                        onChange={(e) => {
+                          let val = e.target.value;
+                          if (val.includes(':8085') || val.includes(':8080')) {
+                            val = val.replace(/^https?:\/\//i, 'mqtt://').replace(/:808[0-9]/, ':1883');
+                          } else if (val.startsWith('http://') || val.startsWith('https://')) {
+                            val = val.replace(/^https?:\/\//i, 'mqtt://');
+                          }
+                          setEditingZ2mHub({ ...editingZ2mHub, broker_url: val });
+                        }}
+                        className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        Base Topic (Z2M MQTT Topic)
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. zigbee2mqtt_2"
+                        value={editingZ2mHub.base_topic || ''}
+                        onChange={(e) => setEditingZ2mHub({ ...editingZ2mHub, base_topic: e.target.value })}
+                        className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-1 block">
+                        Must match <code className="text-cyan-400">base_topic</code> in your 2nd instance
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        Username (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Leave blank if no auth"
+                        value={editingZ2mHub.username || ''}
+                        onChange={(e) => setEditingZ2mHub({ ...editingZ2mHub, username: e.target.value })}
+                        className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                        Password (Optional)
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="Leave blank to keep"
+                        value={editingZ2mHub.password || ''}
+                        onChange={(e) => setEditingZ2mHub({ ...editingZ2mHub, password: e.target.value })}
+                        className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <p className="text-[11px] text-slate-400">
+                      Both coordinators run concurrently. Devices on either coordinator can be controlled seamlessly.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingZ2mHub(null)}
+                        className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={savingZ2mHub}
+                        className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-400 to-brand-500 text-slate-950 font-bold text-xs shadow-glow flex items-center gap-1.5 transition-all"
+                      >
+                        {savingZ2mHub ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+                        {editingZ2mHub.id ? 'Save Coordinator' : 'Connect Coordinator'}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
+
+              {/* Discovered Zigbee Devices */}
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Radio className="w-4 h-4 text-cyan-400" /> Discovered Zigbee Devices ({z2mDevicesList.length})
+                    </h4>
+                  </div>
+
+                  {/* Filter by Coordinator & Search */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Hub Filter Tabs */}
+                    <div className="flex items-center bg-slate-900/80 rounded-xl p-0.5 border border-white/10 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setZ2mFilterHubId('all')}
+                        className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                          z2mFilterHubId === 'all'
+                            ? 'bg-cyan-500 text-slate-950 font-bold'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        All ({z2mDevicesList.length})
+                      </button>
+                      {z2mHubs.map((hub) => {
+                        const count = z2mDevicesList.filter(
+                          (d) => d.hub_id === hub.id || d.base_topic === hub.base_topic
+                        ).length;
+                        return (
+                          <button
+                            key={hub.id}
+                            type="button"
+                            onClick={() => setZ2mFilterHubId(hub.id)}
+                            className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                              z2mFilterHubId === hub.id
+                                ? 'bg-cyan-500 text-slate-950 font-bold'
+                                : 'text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {hub.name} ({count})
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Search box */}
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Search devices..."
+                        value={z2mSearchQuery}
+                        onChange={(e) => setZ2mSearchQuery(e.target.value)}
+                        className="glass-input pl-8 pr-3 py-1 text-xs rounded-xl text-white placeholder-slate-500 w-44 font-mono"
+                      />
+                      {z2mSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setZ2mSearchQuery('')}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {z2mDevicesList.length === 0 ? (
@@ -1423,109 +1913,150 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                     <Radio className="w-10 h-10 text-cyan-400/40 mx-auto" />
                     <h5 className="text-sm font-bold text-white">No Zigbee Devices Discovered Yet</h5>
                     <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                      Make sure your MQTT broker (e.g. Mosquitto on port 1883) and Zigbee2MQTT are running. Once connected, all paired Zigbee devices will appear here automatically.
+                      Make sure your MQTT broker and Zigbee2MQTT coordinator(s) are running. Once connected, all paired Zigbee devices across both coordinators will appear here automatically.
                     </p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {z2mDevicesList.map((dev) => {
-                      const isCoordinator = dev.type === 'Coordinator';
-                      const isMapped = (data?.devices || []).some(
-                        (d) => d.z2m_friendly_name === dev.friendly_name || d.name === dev.friendly_name
-                      );
+                    {z2mDevicesList
+                      .filter((dev) => {
+                        const matchesHub =
+                          z2mFilterHubId === 'all' ||
+                          dev.hub_id === z2mFilterHubId ||
+                          dev.base_topic === z2mFilterHubId;
+                        const q = z2mSearchQuery.toLowerCase().trim();
+                        const matchesSearch =
+                          !q ||
+                          dev.friendly_name.toLowerCase().includes(q) ||
+                          dev.ieee_address.toLowerCase().includes(q) ||
+                          (dev.definition?.vendor && dev.definition.vendor.toLowerCase().includes(q)) ||
+                          (dev.definition?.model && dev.definition.model.toLowerCase().includes(q)) ||
+                          (dev.definition?.description && dev.definition.description.toLowerCase().includes(q));
+                        return matchesHub && matchesSearch;
+                      })
+                      .map((dev) => {
+                        const isCoordinator = dev.type === 'Coordinator';
+                        const isMapped = (data?.devices || []).some(
+                          (d) => d.z2m_friendly_name === dev.friendly_name || d.name === dev.friendly_name
+                        );
+                        const isSwitchable = dev.definition?.exposes?.some(
+                          (e: any) =>
+                            e.type === 'switch' ||
+                            e.type === 'light' ||
+                            e.type === 'cover' ||
+                            e.name === 'state' ||
+                            e.features?.some((f: any) => f.name === 'state')
+                        );
 
-                      return (
-                        <div
-                          key={dev.ieee_address}
-                          className="glass-panel p-4 rounded-2xl border border-white/10 flex flex-col justify-between gap-3 hover:border-white/20 transition-all"
-                        >
-                          <div>
-                            <div className="flex items-start justify-between gap-2">
-                              <div>
-                                <h5 className="font-bold text-sm text-white flex items-center gap-2">
-                                  {dev.friendly_name}
-                                  {isCoordinator && (
-                                    <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                                      COORDINATOR
+                        return (
+                          <div
+                            key={dev.ieee_address}
+                            className="glass-panel p-4 rounded-2xl border border-white/10 flex flex-col justify-between gap-3 hover:border-white/20 transition-all"
+                          >
+                            <div>
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <h5 className="font-bold text-sm text-white flex items-center gap-2 flex-wrap">
+                                    {dev.friendly_name}
+                                    {isCoordinator && (
+                                      <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                        COORDINATOR
+                                      </span>
+                                    )}
+                                    {isMapped && (
+                                      <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                                        MAPPED IN ROOM
+                                      </span>
+                                    )}
+                                    <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-cyan-950/90 text-cyan-300 border border-cyan-700/50">
+                                      {dev.hub_name || dev.base_topic || 'Primary Coordinator'}
                                     </span>
-                                  )}
-                                  {isMapped && (
-                                    <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                                      MAPPED IN ROOM
-                                    </span>
-                                  )}
-                                </h5>
-                                <p className="text-[10px] font-mono text-slate-400 mt-0.5">
-                                  {dev.ieee_address} • {dev.definition?.vendor || 'Generic'} {dev.definition?.model || ''}
-                                </p>
+                                  </h5>
+                                  <p className="text-[10px] font-mono text-slate-400 mt-0.5">
+                                    {dev.ieee_address} • {dev.definition?.vendor || 'Generic'} {dev.definition?.model || ''}
+                                  </p>
+                                </div>
+
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-400 border border-white/5">
+                                  {dev.type}
+                                </span>
                               </div>
 
-                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-400 border border-white/5">
-                                {dev.type}
-                              </span>
+                              {dev.definition?.description && (
+                                <p className="text-[11px] text-slate-300 mt-2 line-clamp-1">
+                                  {dev.definition.description}
+                                </p>
+                              )}
+
+                              <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                                {dev.power_source && (
+                                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-white/5">
+                                    Power: {dev.power_source}
+                                  </span>
+                                )}
+                                {dev.linkquality !== undefined && (
+                                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-emerald-400 border border-white/5">
+                                    LQI: {dev.linkquality}
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
-                            {dev.definition?.description && (
-                              <p className="text-[11px] text-slate-300 mt-2 line-clamp-1">
-                                {dev.definition.description}
-                              </p>
-                            )}
+                            {!isCoordinator && (
+                              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                                {isSwitchable ? (
+                                  <button
+                                    type="button"
+                                    disabled={testingToggleDev === dev.friendly_name}
+                                    onClick={() => handleTestZ2mToggle(dev.friendly_name)}
+                                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50 active:scale-95"
+                                    title="Click to toggle this physical switch / breaker / relay"
+                                  >
+                                    <Power className={`w-3.5 h-3.5 ${testingToggleDev === dev.friendly_name ? 'animate-pulse text-amber-400' : ''}`} />
+                                    {testingToggleDev === dev.friendly_name ? 'Toggling...' : 'Test Toggle'}
+                                  </button>
+                                ) : (
+                                  <span className="text-[11px] font-mono text-slate-500 flex items-center gap-1 px-2 py-1">
+                                    <Activity className="w-3 h-3 text-slate-500" /> Telemetry Sensor
+                                  </span>
+                                )}
 
-                            <div className="flex flex-wrap items-center gap-2 mt-2.5">
-                              {dev.power_source && (
-                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-white/5">
-                                  Power: {dev.power_source}
-                                </span>
-                              )}
-                              {dev.linkquality !== undefined && (
-                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-emerald-400 border border-white/5">
-                                  LQI: {dev.linkquality}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {!isCoordinator && (
-                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
-                              <button
-                                type="button"
-                                onClick={() => handleTestZ2mToggle(dev.friendly_name)}
-                                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                              >
-                                <Power className="w-3.5 h-3.5" /> Test Toggle
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  // Open Device Mapping Modal prefilled
-                                  const targetRoom = data?.rooms?.[0];
-                                  setEditingDevice({
-                                    id: '',
-                                    room_id: targetRoom?.id || '',
-                                    type: dev.definition?.exposes?.some((e: any) => e.type === 'light') ? 'dimmable_light' : 'switch_light',
-                                    name: dev.friendly_name,
-                                    z2m_friendly_name: dev.friendly_name,
-                                    config_json: JSON.stringify({
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    // Open Device Mapping Modal prefilled with hub metadata
+                                    const targetRoom = data?.rooms?.[0];
+                                    setEditingDevice({
+                                      id: '',
+                                      room_id: targetRoom?.id || '',
+                                      type: dev.definition?.exposes?.some((e: any) => e.type === 'light')
+                                        ? 'dimmable_light'
+                                        : 'switch_light',
+                                      name: dev.friendly_name,
                                       z2m_friendly_name: dev.friendly_name,
-                                      z2m_ieee: dev.ieee_address,
-                                      vendor: dev.definition?.vendor,
-                                      model: dev.definition?.model,
-                                    }),
-                                    show_on_default_dashboard: 1,
-                                    sort_order: 0,
-                                  } as Device);
-                                  setDeviceModalOpen(true);
-                                }}
-                                className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-colors"
-                              >
-                                {isMapped ? 'Edit Room Mapping' : 'Assign to Room'}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                                      config_json: JSON.stringify({
+                                        z2m_friendly_name: dev.friendly_name,
+                                        z2m_ieee: dev.ieee_address,
+                                        z2m_hub_id: dev.hub_id,
+                                        z2m_hub_name: dev.hub_name,
+                                        z2m_base_topic: dev.base_topic,
+                                        vendor: dev.definition?.vendor,
+                                        model: dev.definition?.model,
+                                      }),
+                                      show_on_default_dashboard: 1,
+                                      sort_order: 0,
+                                    } as Device);
+                                    setDeviceModalOpen(true);
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-colors"
+                                >
+                                  {isMapped ? 'Edit Room Mapping' : 'Assign to Room'}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
               </div>
@@ -2266,38 +2797,404 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
           {/* TAB 4: TTLock & HR */}
           {activeTab === 'ttlock' && (
             <div className="space-y-6">
-              <div className="glass-panel p-5 rounded-2xl border border-white/10 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-bold text-white">TTLock Smart Door Gateway</h3>
-                    <p className="text-xs text-slate-400">Connect to TTLock Open API and pull all registered doors</p>
-                  </div>
-                  <button
-                    onClick={handleSyncTtlock}
-                    disabled={syncingTtlock}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-400 to-brand-500 text-slate-950 font-bold text-xs shadow-glow flex items-center gap-1.5"
-                  >
-                    {syncingTtlock ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-                    Connect & Sync Locks
-                  </button>
+              {/* Top Action Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Lock className="w-5 h-5 text-cyan-400" /> TTLock Smart Door Gateway &amp; Biometrics
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Direct Cloud Open API &amp; G2 Gateway remote lock control with zero Home Assistant dependency
+                  </p>
                 </div>
 
-                {ttlockResult?.locks && (
-                  <div className="space-y-2 pt-2">
-                    <h4 className="text-xs font-bold text-cyan-400 uppercase">Synced Locks ({ttlockResult.totalLocks})</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {ttlockResult.locks.map((lk: any) => (
-                        <div key={lk.lockId} className="p-3 bg-slate-900/60 rounded-xl border border-white/5 flex items-center justify-between">
-                          <div>
-                            <span className="font-bold text-xs text-white">{lk.lockName}</span>
-                            <span className="text-[10px] font-mono text-cyan-400 block">ID: {lk.lockId}</span>
-                          </div>
-                          <span className="text-xs font-mono text-emerald-400">{lk.electricQuantity}% Battery</span>
-                        </div>
-                      ))}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setShowTtlockGuide(!showTtlockGuide)}
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all ${
+                      showTtlockGuide
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-white/10'
+                    }`}
+                  >
+                    <HelpCircle className="w-4 h-4" />
+                    Setup Guide
+                  </button>
+
+                  <button
+                    onClick={(e) => handleSyncTtlock(e)}
+                    disabled={syncingTtlock}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-400 to-brand-500 text-slate-950 font-bold text-xs shadow-glow flex items-center gap-1.5 active:scale-95 transition-all disabled:opacity-50"
+                  >
+                    {syncingTtlock ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                    Save &amp; Sync Locks
+                  </button>
+                </div>
+              </div>
+
+              {/* Step-by-Step Setup Guide Banner */}
+              {showTtlockGuide && (
+                <div className="glass-panel p-5 rounded-2xl border border-cyan-500/30 bg-cyan-950/20 space-y-4 animate-in fade-in">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
+                        <Key className="w-4 h-4" />
+                      </div>
+                      <h4 className="text-sm font-bold text-white">How to Connect TTLock Smart Locks to DOMINATEE OS</h4>
+                    </div>
+                    <button
+                      onClick={() => setShowTtlockGuide(false)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-white"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
+                    <div className="bg-slate-950/70 p-3 rounded-xl border border-white/10 space-y-1">
+                      <span className="font-bold text-cyan-400 text-[11px] block">Step 1: Developer Account</span>
+                      <p className="text-slate-300 text-[11px] leading-relaxed">
+                        Go to <a href="https://open.ttlock.com" target="_blank" rel="noreferrer" className="text-cyan-400 underline font-mono">open.ttlock.com</a> and sign up for a free developer account.
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-950/70 p-3 rounded-xl border border-white/10 space-y-1">
+                      <span className="font-bold text-cyan-400 text-[11px] block">Step 2: Create App</span>
+                      <p className="text-slate-300 text-[11px] leading-relaxed">
+                        Navigate to <strong>Applications &rarr; Create App</strong> (choose Web App) to generate your <strong>Client ID</strong> and <strong>Client Secret</strong>.
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-950/70 p-3 rounded-xl border border-white/10 space-y-1">
+                      <span className="font-bold text-cyan-400 text-[11px] block">Step 3: G2 Wi-Fi Gateway</span>
+                      <p className="text-slate-300 text-[11px] leading-relaxed">
+                        In your TTLock mobile app, pair a <strong>TTLock G2 Wi-Fi Gateway</strong> near your locks so remote cloud unlocking is enabled.
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-950/70 p-3 rounded-xl border border-white/10 space-y-1">
+                      <span className="font-bold text-cyan-400 text-[11px] block">Step 4: Save &amp; Sync</span>
+                      <p className="text-slate-300 text-[11px] leading-relaxed">
+                        Enter your credentials below and click <strong>Save &amp; Sync Locks</strong>. All doors will appear automatically for room control &amp; favorites!
+                      </p>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Status Metric Overview */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="glass-panel p-4 rounded-2xl border border-white/10 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">TTLock Cloud Link</span>
+                    <span className="text-xs font-mono font-bold text-white mt-0.5 block truncate max-w-[170px]">
+                      {ttlockUsername || 'Not Configured'}
+                    </span>
+                  </div>
+                  <span
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
+                      data?.config?.ttlock_authenticated || ttlockResult?.ok
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-glow-emerald'
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    }`}
+                  >
+                    {data?.config?.ttlock_authenticated || ttlockResult?.ok ? 'AUTHENTICATED' : 'NOT LINKED'}
+                  </span>
+                </div>
+
+                <div className="glass-panel p-4 rounded-2xl border border-white/10 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Synced Doors &amp; Locks</span>
+                    <span className="text-xs font-mono font-bold text-white mt-0.5 block">
+                      {ttlockResult?.locks ? ttlockResult.locks.length : (data?.devices || []).filter((d) => d.type === 'ttlock').length} Smart Locks
+                    </span>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                    {ttlockResult?.locks ? ttlockResult.locks.length : (data?.devices || []).filter((d) => d.type === 'ttlock').length} TOTAL
+                  </span>
+                </div>
+
+                <div className="glass-panel p-4 rounded-2xl border border-white/10 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Remote Unlock Gateway</span>
+                    <span className="text-xs font-mono font-bold text-white mt-0.5 block">
+                      G2 Wi-Fi &amp; Cloud Gateway
+                    </span>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    READY
+                  </span>
+                </div>
+              </div>
+
+              {/* TTLock Open API Credentials Form */}
+              <form onSubmit={handleSyncTtlock} className="glass-panel p-5 rounded-2xl border border-white/10 space-y-4">
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Key className="w-4 h-4 text-cyan-400" /> TTLock Open API Connection Credentials
+                  </h4>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    From <code className="text-cyan-400">open.ttlock.com</code>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Client ID (App ID)
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. 5e89a1f2..."
+                      value={ttlockClientId}
+                      onChange={(e) => setTtlockClientId(e.target.value)}
+                      className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Client Secret
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showTtlockSecret ? 'text' : 'password'}
+                        required
+                        placeholder="e.g. b89c21..."
+                        value={ttlockClientSecret}
+                        onChange={(e) => setTtlockClientSecret(e.target.value)}
+                        className="w-full glass-input rounded-xl pl-3 pr-8 py-2 text-xs font-mono text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowTtlockSecret(!showTtlockSecret)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                      >
+                        {showTtlockSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      TTLock Username (Email / Phone)
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. admin@company.com"
+                      value={ttlockUsername}
+                      onChange={(e) => setTtlockUsername(e.target.value)}
+                      className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      TTLock Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showTtlockPassword ? 'text' : 'password'}
+                        placeholder={data?.config?.ttlock_authenticated ? 'Leave blank to keep existing' : 'Account password'}
+                        value={ttlockPassword}
+                        onChange={(e) => setTtlockPassword(e.target.value)}
+                        className="w-full glass-input rounded-xl pl-3 pr-8 py-2 text-xs font-mono text-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowTtlockPassword(!showTtlockPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                      >
+                        {showTtlockPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Custom Gateway / Local Bridge URL (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. http://192.168.0.50:8080/unlock?lockId={lockId} (leave blank for standard TTLock cloud)"
+                    value={ttlockLegacyUrl}
+                    onChange={(e) => setTtlockLegacyUrl(e.target.value)}
+                    className="w-full glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-1 block">
+                    Optional: Use only if you run a custom local TTLock bridge hardware instead of the standard TTLock G2 cloud gateway.
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <p className="text-[11px] text-slate-400">
+                    Passwords are MD5 hashed securely. Sensitive tokens are never transmitted back to clients.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={syncingTtlock}
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-400 to-brand-500 text-slate-950 font-bold text-xs shadow-glow flex items-center gap-1.5 active:scale-95 transition-all shrink-0 disabled:opacity-50"
+                  >
+                    {syncingTtlock ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Lock className="w-3.5 h-3.5" />}
+                    Save Credentials &amp; Sync Locks
+                  </button>
+                </div>
+              </form>
+
+              {/* Synced Locks List */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                    Synced TTLock Smart Locks ({ttlockResult?.locks?.length || (data?.devices || []).filter((d) => d.type === 'ttlock').length})
+                  </h4>
+                  <span className="text-xs text-slate-400">
+                    Discovered via TTLock Open API
+                  </span>
+                </div>
+
+                {ttlockResult?.locks && ttlockResult.locks.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {ttlockResult.locks.map((lk: any) => {
+                      const isUnlocking = unlockingLockId === lk.lockId;
+                      const isMapped = (data?.devices || []).some(
+                        (d) => d.type === 'ttlock' && (d.entity_id === String(lk.lockId) || d.config_json?.includes(String(lk.lockId)))
+                      );
+                      const batteryLevel = lk.electricQuantity ?? 100;
+                      const hasGateway = lk.hasGateway === 1;
+
+                      return (
+                        <div
+                          key={lk.lockId}
+                          className="glass-panel p-4 rounded-2xl border border-white/10 hover:border-cyan-500/30 transition-all flex flex-col justify-between gap-3"
+                        >
+                          <div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <h5 className="font-bold text-sm text-white flex items-center gap-2">
+                                  <Lock className="w-4 h-4 text-cyan-400" />
+                                  {lk.lockName || lk.lockAlias || `Lock ${lk.lockId}`}
+                                  {isMapped && (
+                                    <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                                      MAPPED IN ROOM
+                                    </span>
+                                  )}
+                                </h5>
+                                <p className="text-[10px] font-mono text-slate-400 mt-0.5 flex items-center gap-2">
+                                  <span>ID: {lk.lockId}</span>
+                                  {lk.lockMac && <span>• MAC: {lk.lockMac}</span>}
+                                </p>
+                              </div>
+
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                                  hasGateway
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                }`}
+                              >
+                                {hasGateway ? 'G2 GATEWAY ONLINE' : 'BLUETOOTH ONLY'}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-3 mt-3">
+                              <div className="flex items-center gap-1.5 text-xs font-mono">
+                                <Battery
+                                  className={`w-4 h-4 ${
+                                    batteryLevel > 50
+                                      ? 'text-emerald-400'
+                                      : batteryLevel > 20
+                                      ? 'text-amber-400'
+                                      : 'text-rose-400'
+                                  }`}
+                                />
+                                <span
+                                  className={`font-bold ${
+                                    batteryLevel > 50
+                                      ? 'text-emerald-400'
+                                      : batteryLevel > 20
+                                      ? 'text-amber-400'
+                                      : 'text-rose-400'
+                                  }`}
+                                >
+                                  {batteryLevel}% Battery
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                            <button
+                              type="button"
+                              onClick={() => handleTestUnlock(lk.lockId)}
+                              disabled={isUnlocking}
+                              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                            >
+                              {isUnlocking ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Unlock className="w-3.5 h-3.5" />
+                              )}
+                              Test Remote Unlock
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleMapLockToRoom(lk)}
+                              className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-colors"
+                            >
+                              {isMapped ? 'Edit Room Mapping' : 'Assign to Room'}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="glass-panel p-8 rounded-2xl border border-dashed border-white/10 text-center space-y-3">
+                    <Lock className="w-10 h-10 text-cyan-400/40 mx-auto" />
+                    <h5 className="text-sm font-bold text-white">No TTLock Doors Synced Yet</h5>
+                    <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                      Enter your TTLock developer Client ID, Secret, and account login above, then click <strong>&quot;Save Credentials &amp; Sync Locks&quot;</strong> to automatically discover and control your smart locks.
+                    </p>
+                  </div>
                 )}
+              </div>
+
+              {/* Direct Lock ID Tester */}
+              <div className="glass-panel p-5 rounded-2xl border border-white/10 space-y-3">
+                <h4 className="text-xs font-mono text-cyan-400 uppercase font-bold tracking-wider flex items-center gap-2">
+                  <Key className="w-4 h-4" /> Direct Remote Unlock Diagnostic Tester
+                </h4>
+                <p className="text-xs text-slate-400">
+                  Enter any TTLock Lock ID manually to send an immediate remote unlock signal through your G2 gateway.
+                </p>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    type="text"
+                    placeholder="Enter Lock ID (e.g. 1928374)"
+                    value={testingUnlockLockId}
+                    onChange={(e) => setTestingUnlockLockId(e.target.value)}
+                    className="flex-1 glass-input rounded-xl px-3 py-2 text-xs font-mono text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleTestUnlock(testingUnlockLockId.trim())}
+                    disabled={!testingUnlockLockId.trim() || unlockingLockId === testingUnlockLockId.trim()}
+                    className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-cyan-400 text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-40"
+                  >
+                    {unlockingLockId === testingUnlockLockId.trim() ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Unlock className="w-3.5 h-3.5" />
+                    )}
+                    Send Unlock Signal
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -2307,39 +3204,68 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-base font-bold text-white">Base64 AC IR Command Profiles</h3>
-                  <p className="text-xs text-slate-400">Zigbee2MQTT Base64 command maps for air conditioners</p>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Radio className="w-5 h-5 text-cyan-400" />
+                    Base64 AC IR Command Profiles
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Zigbee2MQTT Base64 command maps for air conditioners and IR blasters
+                  </p>
                 </div>
                 <button
                   onClick={() => {
                     setEditingIrProfile(null);
                     setIrModalOpen(true);
                   }}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-400 to-brand-500 text-slate-950 font-bold text-xs shadow-glow flex items-center gap-1.5"
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-400 to-brand-500 text-slate-950 font-bold text-xs shadow-glow flex items-center gap-1.5 active:scale-95 transition-all"
                 >
                   <Plus className="w-4 h-4" /> Create Profile
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {(data?.ir_profiles || []).map((prof) => (
-                  <div key={prof.id} className="glass-panel p-4 rounded-2xl border border-white/10 flex items-center justify-between">
-                    <div>
-                      <h4 className="font-bold text-white text-sm">{prof.name}</h4>
-                      <p className="text-xs font-mono text-cyan-400">{prof.brand || 'Universal'}</p>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setEditingIrProfile(prof);
-                        setIrModalOpen(true);
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-semibold"
+              {(data?.ir_profiles || []).length === 0 ? (
+                <div className="glass-panel p-8 rounded-2xl border border-dashed border-white/10 text-center space-y-3">
+                  <Radio className="w-10 h-10 text-cyan-400/40 mx-auto" />
+                  <h5 className="text-sm font-bold text-white">No IR Profiles Configured</h5>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                    Create custom Base64 IR command maps for your Air Conditioners, TVs, or Media Players. Click &quot;+ Create Profile&quot; to start learning or mapping IR commands.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {(data?.ir_profiles || []).map((prof) => (
+                    <div
+                      key={prof.id}
+                      className="glass-panel p-4 rounded-2xl border border-white/10 flex items-center justify-between gap-3 hover:border-white/20 transition-all"
                     >
-                      Open Learner
-                    </button>
-                  </div>
-                ))}
-              </div>
+                      <div>
+                        <h4 className="font-bold text-white text-sm">{prof.name}</h4>
+                        <p className="text-xs font-mono text-cyan-400">{prof.brand || 'Universal'}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingIrProfile(prof);
+                            setIrModalOpen(true);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                        >
+                          <Radio className="w-3.5 h-3.5" /> Open Learner
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteIrProfile(prof.id, prof.name)}
+                          className="p-1.5 rounded-lg bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 transition-colors"
+                          title="Delete IR Profile"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

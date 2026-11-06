@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Send, Radio, Sparkles, Check, RefreshCw, KeyRound, Copy } from 'lucide-react';
+import { X, Send, Radio, Sparkles, Check, RefreshCw, KeyRound, Copy, Trash2 } from 'lucide-react';
 import type { IrProfile, HaHub } from '../../types';
 import { ApiService } from '../../services/api';
 
@@ -24,7 +24,7 @@ export const IrCodeEditorModal: React.FC<IrCodeEditorModalProps> = ({
   let initialCommands: Record<string, string> = {};
   try {
     initialCommands = JSON.parse(initialProfile?.commands_json || '{}');
-  } catch (_) {}
+  } catch (_) { }
 
   const [commands, setCommands] = useState<Record<string, string>>(initialCommands);
   const [activeTab, setActiveTab] = useState<'paste' | 'learn'>('paste');
@@ -181,17 +181,15 @@ export const IrCodeEditorModal: React.FC<IrCodeEditorModalProps> = ({
           <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-white/5">
             <button
               onClick={() => setActiveTab('paste')}
-              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
-                activeTab === 'paste' ? 'bg-cyan-500 text-slate-950 font-bold shadow-glow' : 'text-slate-400'
-              }`}
+              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${activeTab === 'paste' ? 'bg-cyan-500 text-slate-950 font-bold shadow-glow' : 'text-slate-400'
+                }`}
             >
               Paste & Test Mode
             </button>
             <button
               onClick={() => setActiveTab('learn')}
-              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
-                activeTab === 'learn' ? 'bg-cyan-500 text-slate-950 font-bold shadow-glow' : 'text-slate-400'
-              }`}
+              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${activeTab === 'learn' ? 'bg-cyan-500 text-slate-950 font-bold shadow-glow' : 'text-slate-400'
+                }`}
             >
               Live Z2M Learn Mode
             </button>
@@ -246,11 +244,10 @@ export const IrCodeEditorModal: React.FC<IrCodeEditorModalProps> = ({
                     onClick={() => handleTestSend(item.key)}
                     disabled={!commands[item.key] || !testEntityId || testingKey === item.key}
                     title="Send Test IR Code"
-                    className={`p-1.5 rounded-lg transition-all ${
-                      testSuccessKey === item.key
+                    className={`p-1.5 rounded-lg transition-all ${testSuccessKey === item.key
                         ? 'bg-emerald-500 text-slate-950'
                         : 'bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-slate-300 disabled:opacity-30'
-                    }`}
+                      }`}
                   >
                     {testingKey === item.key ? (
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -295,11 +292,10 @@ export const IrCodeEditorModal: React.FC<IrCodeEditorModalProps> = ({
                     onClick={() => handleTestSend(item.key)}
                     disabled={!commands[item.key] || !testEntityId || testingKey === item.key}
                     title="Send Test IR Code"
-                    className={`p-1.5 rounded-lg transition-all ${
-                      testSuccessKey === item.key
+                    className={`p-1.5 rounded-lg transition-all ${testSuccessKey === item.key
                         ? 'bg-emerald-500 text-slate-950'
                         : 'bg-slate-800 hover:bg-cyan-500 hover:text-slate-950 text-slate-300 disabled:opacity-30'
-                    }`}
+                      }`}
                   >
                     {testingKey === item.key ? (
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -326,9 +322,26 @@ export const IrCodeEditorModal: React.FC<IrCodeEditorModalProps> = ({
 
         {/* Footer Actions */}
         <div className="flex items-center justify-between border-t border-white/10 pt-4 mt-3">
-          <span className="text-xs text-slate-400">
-            {Object.keys(commands).filter((k) => commands[k]).length} codes defined
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-slate-400">
+              {Object.keys(commands).filter((k) => commands[k]).length} codes defined
+            </span>
+            {initialProfile && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (window.confirm(`Are you sure you want to delete IR profile "${initialProfile.name}"?`)) {
+                    await ApiService.deleteIrProfile(initialProfile.id);
+                    onSaved();
+                    onClose();
+                  }
+                }}
+                className="px-3 py-1.5 text-xs font-semibold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-xl flex items-center gap-1 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete Profile
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white">
               Cancel

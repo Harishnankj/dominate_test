@@ -65,6 +65,17 @@ CREATE TABLE IF NOT EXISTS ha_hubs (
   sort_order INTEGER DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS z2m_hubs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  broker_url TEXT NOT NULL,
+  base_topic TEXT DEFAULT 'zigbee2mqtt',
+  username TEXT DEFAULT '',
+  password TEXT DEFAULT '',
+  enabled INTEGER DEFAULT 1,
+  sort_order INTEGER DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS floors (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

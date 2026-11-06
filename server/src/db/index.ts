@@ -95,6 +95,38 @@ export function initDatabase() {
     if (!configCols.includes('tuya_uid')) db.exec("ALTER TABLE building_config ADD COLUMN tuya_uid TEXT DEFAULT '';");
   } catch (_) {}
 
+  // Schema table for multi-coordinator Zigbee2MQTT hubs (z2m_hubs)
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS z2m_hubs (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        broker_url TEXT NOT NULL,
+        base_topic TEXT DEFAULT 'zigbee2mqtt',
+        username TEXT DEFAULT '',
+        password TEXT DEFAULT '',
+        enabled INTEGER DEFAULT 1,
+        sort_order INTEGER DEFAULT 0
+      );
+    `);
+    const hubCountRow = db.prepare('SELECT COUNT(*) as cnt FROM z2m_hubs').get() as { cnt: number };
+    if (!hubCountRow || hubCountRow.cnt === 0) {
+      const cfg = db.prepare('SELECT mqtt_enabled, mqtt_broker_url, mqtt_username, mqtt_password, mqtt_base_topic FROM building_config WHERE id = 1').get() as any;
+      if (cfg && cfg.mqtt_broker_url) {
+        db.prepare(`
+          INSERT INTO z2m_hubs (id, name, broker_url, base_topic, username, password, enabled, sort_order)
+          VALUES ('z2m_hub_1', 'Coordinator 1 (Primary)', ?, ?, ?, ?, ?, 0)
+        `).run(
+          cfg.mqtt_broker_url,
+          cfg.mqtt_base_topic || 'zigbee2mqtt',
+          cfg.mqtt_username || '',
+          cfg.mqtt_password || '',
+          cfg.mqtt_enabled ?? 1
+        );
+      }
+    }
+  } catch (_) {}
+
   // Ensure building_config row 1 exists in a fresh, unconfigured state (setup_completed = 0)
   const config = db.prepare('SELECT id, setup_completed FROM building_config WHERE id = 1').get() as { id: number; setup_completed: number } | undefined;
   if (!config) {
@@ -112,65 +144,6 @@ export function initDatabase() {
     `).run(now);
   }
 
-  // Pre-seed default Base64 AC IR command templates in ir_profiles if table is empty
-  const irCountRow = db.prepare('SELECT COUNT(*) as cnt FROM ir_profiles').get() as { cnt: number };
-  if (!irCountRow || irCountRow.cnt === 0) {
-    seedDefaultIrProfiles();
-  }
-}
-
-function seedDefaultIrProfiles() {
-  const generateAcCommands = (prefix: string) => {
-    const commands: Record<string, string> = {
-      on: `Base64:${prefix}AAIAAAD/AAAD/wAAkGAAABQAAAC/w==`,
-      off: `Base64:${prefix}AAIAAAD/AAAD/wAAkGAAABQAAAC0w==`,
-      swing_on: `Base64:${prefix}AAIAAAD/AAAD/wAAkGAAABQAAAASw==`,
-      swing_off: `Base64:${prefix}AAIAAAD/AAAD/wAAkGAAABQAAACSx==`,
-      mode_cool: `Base64:${prefix}AAIAAAD/AAAD/wAAkGAAABQAAAC9k==`,
-      mode_dry: `Base64:${prefix}AAIAAAD/AAAD/wAAkGAAABQAAAC5g==`,
-      mode_fan: `Base64:${prefix}AAIAAAD/AAAD/wAAkGAAABQAAAC3c==`,
-      fan_auto: `Base64:${prefix}AAIAAAD/AAAD/wAAkGAAABQAAAC1b==`,
-      fan_1: `Base64:${prefix}AAIAAAD/AAAD/wAAkGAAABQAAAC11==`,
-      fan_2: `Base64:${prefix}AAIAAAD/AAAD/wAAkGAAABQAAAC22==`,
-      fan_3: `Base64:${prefix}AAIAAAD/AAAD/wAAkGAAABQAAAC33==`,
-      saver_on: `Base64:${prefix}AAIAAAD/AAAD/wAAkGAAABQAAACE4==`,
-      saver_off: `Base64:${prefix}AAIAAAD/AAAD/wAAkGAAABQAAACF5==`,
-    };
-
-    for (let t = 16; t <= 30; t++) {
-      commands[`temp_${t}`] = `Base64:${prefix}AAIAAAD/AAAD/wAAkGAAABQAAAAT${t}==`;
-    }
-
-    return JSON.stringify(commands);
-  };
-
-  const insertIr = db.prepare('INSERT INTO ir_profiles (id, name, brand, commands_json) VALUES (?, ?, ?, ?)');
-
-  insertIr.run(
-    'ir_daikin_default',
-    'Daikin Inverter (ARC480 Series)',
-    'Daikin',
-    generateAcCommands('DKN')
-  );
-
-  insertIr.run(
-    'ir_panasonic_default',
-    'Panasonic Econavi (CS-Series)',
-    'Panasonic',
-    generateAcCommands('PNS')
-  );
-
-  insertIr.run(
-    'ir_mitsubishi_default',
-    'Mitsubishi Heavy (RKX502 Series)',
-    'Mitsubishi',
-    generateAcCommands('MHI')
-  );
-
-  insertIr.run(
-    'ir_universal_default',
-    'Universal Split AC (Z2M Standard)',
-    'Universal',
-    generateAcCommands('UNI')
-  );
+  // Clean up any dummy pre-seeded IR profiles
+  db.prepare("DELETE FROM ir_profiles WHERE id IN ('ir_daikin_default', 'ir_panasonic_default', 'ir_mitsubishi_default', 'ir_universal_default') OR id LIKE 'ir_%_default'").run();
 }

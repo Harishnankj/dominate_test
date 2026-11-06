@@ -33,11 +33,10 @@ export const ViewPage: React.FC<ViewPageProps> = ({
             <button
               key={floor.id}
               onClick={() => setSelectedFloorId(floor.id)}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${
-                isActive
+              className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${isActive
                   ? 'bg-gradient-to-r from-cyan-500 to-brand-600 text-white shadow-glow'
                   : 'bg-slate-900/80 text-slate-400 hover:text-white border border-white/10'
-              }`}
+                }`}
             >
               <Layers className="w-4 h-4" />
               {floor.name}
@@ -100,9 +99,8 @@ export const ViewPage: React.FC<ViewPageProps> = ({
                   </div>
 
                   {presenceDev && (
-                    <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-                      isOccupied ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
-                    }`}>
+                    <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${isOccupied ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+                      }`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${isOccupied ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
                       {isOccupied ? 'OCCUPIED' : 'CLEAR'}
                     </span>

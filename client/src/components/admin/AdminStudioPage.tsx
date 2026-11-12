@@ -44,8 +44,11 @@ import {
   Key,
   ShieldCheck,
   Activity,
+  AlertCircle,
+  WifiOff,
 } from 'lucide-react';
 import { useBootstrap } from '../../context/BootstrapContext';
+import { useHA } from '../../context/MultiHubHomeAssistantProvider';
 import { ApiService } from '../../services/api';
 import { DeviceMappingModal } from './DeviceMappingModal';
 import { IrCodeEditorModal } from './IrCodeEditorModal';
@@ -70,6 +73,10 @@ interface AdminStudioPageProps {
 
 export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initialTab = 'hubs' }) => {
   const { data, refreshBootstrap } = useBootstrap();
+  const { hubs: liveHaHubs, reconnectHub } = useHA();
+
+  const enabledHaHubs = (data?.hubs || []).filter((h) => h.enabled);
+  const connectedHaCount = enabledHaHubs.filter((h) => liveHaHubs[h.id]?.isConnected).length;
 
   const [activeTab, setActiveTab] = useState<AdminStudioTabType>(initialTab);
 
@@ -82,7 +89,7 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
   // Hub Manager State
   const [editingHub, setEditingHub] = useState<Partial<HaHub> | null>(null);
   const [testingHubId, setTestingHubId] = useState<string | null>(null);
-  const [hubTestResult, setHubTestResult] = useState<any>(null);
+  const [hubTestResults, setHubTestResults] = useState<Record<string, { ok: boolean; message: string; version?: string; entities?: number }>>({});
 
   // Floor & Room Manager State
   const [selectedFloorId, setSelectedFloorId] = useState<string>(data?.floors[0]?.id || '');
@@ -150,6 +157,7 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
   const [ttlockResult, setTtlockResult] = useState<any>(null);
   const [testingUnlockLockId, setTestingUnlockLockId] = useState('');
   const [unlockingLockId, setUnlockingLockId] = useState<string | number | null>(null);
+  const [unlockResults, setUnlockResults] = useState<Record<string, { ok: boolean; message: string }>>({});
 
   // Building Settings
   const [buildingName, setBuildingName] = useState(data?.config?.building_name || 'Smart Office');
@@ -472,6 +480,22 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
     }
   };
 
+  const handleTestTuyaLock = async (deviceId: string, devName: string) => {
+    try {
+      showStatus(`Requesting unlock for ${devName}...`);
+      const res = await ApiService.unlockTuyaDevice(deviceId);
+      if (res.ok) {
+        showStatus(`✅ ${res.message || 'Unlock successful!'}`);
+      } else {
+        alert(`🔒 Tuya Security Notice for "${devName}":\n\n${res.message}`);
+        showStatus(res.message || 'Unlock restricted by Tuya security', true);
+      }
+    } catch (err: any) {
+      alert(`🔒 Tuya Security Notice for "${devName}":\n\n${err.message}`);
+      showStatus(err.message, true);
+    }
+  };
+
   const handleSaveManualTuya = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualTuyaName || !manualTuyaId || !manualTuyaRoomId) {
@@ -716,19 +740,56 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
 
   const handleTestHub = async (hub: HaHub) => {
     setTestingHubId(hub.id);
-    setHubTestResult(null);
     try {
       const res = await ApiService.testHaConnection({
         hub_id: hub.id,
         local_url: hub.local_url,
         access_token: hub.access_token,
       });
-      setHubTestResult(res);
-      showStatus(res.ok ? `Connected to ${res.haVersion} with ${res.totalEntities} entities` : `Failed: ${res.error}`, !res.ok);
+      if (res.ok) {
+        setHubTestResults((prev) => ({
+          ...prev,
+          [hub.id]: {
+            ok: true,
+            message: `Connected: ${res.haVersion || 'Home Assistant'} (${res.totalEntities ?? 0} entities discovered)`,
+            version: res.haVersion,
+            entities: res.totalEntities,
+          },
+        }));
+        showStatus(`Hub "${hub.name}": Connected to ${res.haVersion} with ${res.totalEntities} entities`);
+        reconnectHub?.(hub.id);
+      } else {
+        setHubTestResults((prev) => ({
+          ...prev,
+          [hub.id]: {
+            ok: false,
+            message: `Connection failed: ${res.error || 'Connection timed out or host unreachable'}`,
+          },
+        }));
+        showStatus(`Hub "${hub.name}" Failed: ${res.error}`, true);
+      }
     } catch (err: any) {
+      setHubTestResults((prev) => ({
+        ...prev,
+        [hub.id]: {
+          ok: false,
+          message: `Network error: ${err.message}`,
+        },
+      }));
       showStatus(err.message, true);
     } finally {
       setTestingHubId(null);
+    }
+  };
+
+  const handleToggleHaHubEnabled = async (hub: HaHub) => {
+    try {
+      const newEnabled = hub.enabled ? 0 : 1;
+      await ApiService.updateHub(hub.id, { ...hub, enabled: newEnabled });
+      await refreshBootstrap();
+      showStatus(`Hub "${hub.name}" ${newEnabled ? 'enabled' : 'disabled'}`);
+    } catch (err: any) {
+      showStatus(err.message, true);
     }
   };
 
@@ -766,6 +827,7 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
           local_url: editingHub.local_url!,
           cloud_url: editingHub.cloud_url,
           access_token: editingHub.access_token || '',
+          enabled: editingHub.enabled ?? 1,
         });
         showStatus('Hub added successfully');
       }
@@ -985,15 +1047,28 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
   };
 
   const handleTestUnlock = async (lockId: string | number) => {
-    setUnlockingLockId(lockId);
+    const cleanId = String(lockId).trim();
+    if (!cleanId || cleanId === 'undefined' || cleanId === 'null' || cleanId.startsWith('dev_')) {
+      showStatus('Invalid Lock ID. Please assign a real numeric TTLock ID (e.g. 25100936).', true);
+      return;
+    }
+    setUnlockingLockId(cleanId);
     try {
-      const res = await ApiService.unlockTtlock(lockId);
+      const res = await ApiService.unlockTtlock(cleanId);
+      setUnlockResults((prev) => ({
+        ...prev,
+        [cleanId]: { ok: res.ok, message: res.message || (res.ok ? 'Signal delivered' : 'Failed') },
+      }));
       if (res.ok) {
-        showStatus(`Remote unlock signal sent to Lock ${lockId}!`);
+        showStatus(`Remote unlock signal sent to Lock ${cleanId}!`);
       } else {
         showStatus(res.message || 'Unlock signal failed', true);
       }
     } catch (err: any) {
+      setUnlockResults((prev) => ({
+        ...prev,
+        [cleanId]: { ok: false, message: err.message },
+      }));
       showStatus(err.message, true);
     } finally {
       setUnlockingLockId(null);
@@ -1138,8 +1213,21 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                     : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
                 }`}
               >
-                <Icon className="w-4 h-4" />
-                {item.label}
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="flex-1 text-left">{item.label}</span>
+                {item.id === 'hubs' && enabledHaHubs.length > 0 && (
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold ${
+                      connectedHaCount === enabledHaHubs.length
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : connectedHaCount > 0
+                        ? 'bg-amber-500/20 text-amber-300'
+                        : 'bg-rose-500/20 text-rose-300'
+                    }`}
+                  >
+                    {connectedHaCount}/{enabledHaHubs.length}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -1150,19 +1238,52 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
           {/* TAB 1: Home Assistant Hubs */}
           {activeTab === 'hubs' && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-base font-bold text-white">Home Assistant Hubs</h3>
-                  <p className="text-xs text-slate-400">
-                    Connect multiple local and cloud HA instances dynamically.
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-base font-bold text-white">Home Assistant Hubs</h3>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-lg text-xs font-mono font-semibold flex items-center gap-1.5 border ${
+                        connectedHaCount === enabledHaHubs.length && enabledHaHubs.length > 0
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                          : connectedHaCount > 0
+                          ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                          : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                      }`}
+                    >
+                      <Wifi className="w-3.5 h-3.5" />
+                      {enabledHaHubs.length === 0
+                        ? 'No Hubs Configured'
+                        : `${connectedHaCount} / ${enabledHaHubs.length} Online (${
+                            connectedHaCount === enabledHaHubs.length
+                              ? 'ALL ACTIVE'
+                              : connectedHaCount > 0
+                              ? 'PARTIAL'
+                              : 'ALL OFFLINE'
+                          })`}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Connect multiple local and cloud HA instances dynamically with live WebSocket state sync.
                   </p>
                 </div>
-                <button
-                  onClick={() => setEditingHub({ name: 'Secondary Hub', local_url: 'http://192.168.1.101:8123', enabled: 1 })}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-400 to-brand-500 text-slate-950 font-bold text-xs tracking-wide shadow-glow flex items-center gap-1.5"
-                >
-                  <Plus className="w-4 h-4" /> Add HA Hub
-                </button>
+                <div className="flex items-center gap-2">
+                  {enabledHaHubs.length > 0 && connectedHaCount < enabledHaHubs.length && (
+                    <button
+                      onClick={() => reconnectHub?.()}
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-semibold flex items-center gap-1.5 border border-white/10 active:scale-95 transition-all"
+                      title="Attempt live reconnection for all hubs"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" /> Reconnect All
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setEditingHub({ name: 'Secondary Hub', local_url: 'http://192.168.1.101:8123', enabled: 1 })}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-400 to-brand-500 text-slate-950 font-bold text-xs tracking-wide shadow-glow flex items-center gap-1.5 active:scale-95 transition-all"
+                  >
+                    <Plus className="w-4 h-4" /> Add HA Hub
+                  </button>
+                </div>
               </div>
 
               {/* Next Steps Guidance Banner */}
@@ -1188,59 +1309,158 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
 
               {/* Hub Cards */}
               <div className="grid grid-cols-1 gap-4">
-                {(data?.hubs || []).map((hub) => (
-                  <div key={hub.id} className="glass-panel rounded-2xl p-4 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-white text-sm">{hub.name}</h4>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${hub.enabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
-                          {hub.enabled ? 'ACTIVE' : 'DISABLED'}
-                        </span>
+                {(data?.hubs || []).map((hub) => {
+                  const liveState = liveHaHubs[hub.id];
+                  const isConnected = !!hub.enabled && !!liveState?.isConnected;
+                  const testResult = hubTestResults[hub.id];
+                  const liveEntityCount = liveState?.entities ? Object.keys(liveState.entities).length : 0;
+
+                  return (
+                    <div
+                      key={hub.id}
+                      className={`glass-panel rounded-2xl p-4 border transition-all ${
+                        !hub.enabled
+                          ? 'border-white/5 opacity-70'
+                          : isConnected
+                          ? 'border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.05)]'
+                          : 'border-rose-500/30'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-white text-sm">{hub.name}</h4>
+
+                            {/* Live Connection Status Badge */}
+                            {!hub.enabled ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 border border-slate-700/50 flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                DISABLED
+                              </span>
+                            ) : isConnected ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                ACTIVE
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                                OFFLINE
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="mt-1 space-y-0.5">
+                            <p className="text-xs font-mono text-cyan-400">{hub.local_url}</p>
+                            {hub.cloud_url && <p className="text-[11px] font-mono text-slate-400">{hub.cloud_url}</p>}
+
+                            {/* Realtime Live State Info */}
+                            {hub.enabled && (
+                              <div className="flex items-center gap-2 text-[11px] font-mono mt-1">
+                                {isConnected ? (
+                                  <span className="text-emerald-400 flex items-center gap-1">
+                                    <Wifi className="w-3 h-3" /> Live WS Connected • {liveEntityCount} Entities Synced
+                                  </span>
+                                ) : (
+                                  <span className="text-rose-400 flex items-center gap-1">
+                                    <WifiOff className="w-3 h-3" /> WebSocket Disconnected / Host Unreachable
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                          <button
+                            onClick={() => handleTestHub(hub)}
+                            disabled={testingHubId === hub.id}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-cyan-400 flex items-center gap-1.5 active:scale-95 transition-all disabled:opacity-50"
+                            title="Probe HTTP API & reconnect live WebSocket"
+                          >
+                            {testingHubId === hub.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5" />}
+                            Test Connection
+                          </button>
+
+                          <button
+                            onClick={() => handleOpenEntityBrowser(hub)}
+                            className="px-3 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 border border-indigo-500/30 active:scale-95 transition-all"
+                          >
+                            <ListFilter className="w-3.5 h-3.5" /> Discovered Entities
+                          </button>
+
+                          <button
+                            onClick={() => handleAutoImportFromHub(hub.id)}
+                            className="px-3 py-1.5 rounded-lg bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-300 text-xs font-semibold flex items-center gap-1.5 border border-cyan-500/30 active:scale-95 transition-all"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" /> 1-Click Import Areas
+                          </button>
+
+                          <button
+                            onClick={() => handleToggleHaHubEnabled(hub)}
+                            title={hub.enabled ? 'Click to disable hub' : 'Click to enable hub'}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all border active:scale-95 ${
+                              hub.enabled
+                                ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/30'
+                                : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border-slate-700'
+                            }`}
+                          >
+                            {hub.enabled ? <ToggleRight className="w-4 h-4 text-emerald-400" /> : <ToggleLeft className="w-4 h-4 text-slate-500" />}
+                            <span className="hidden sm:inline">{hub.enabled ? 'Enabled' : 'Disabled'}</span>
+                          </button>
+
+                          <button
+                            onClick={() => setEditingHub(hub)}
+                            className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white active:scale-95 transition-all"
+                            title="Edit Hub Settings"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteHub(hub.id)}
+                            className="p-2 rounded-lg bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 active:scale-95 transition-all"
+                            title="Delete Hub"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
-                      <p className="text-xs font-mono text-cyan-400 mt-1">{hub.local_url}</p>
-                      {hub.cloud_url && <p className="text-[11px] font-mono text-slate-400">{hub.cloud_url}</p>}
+
+                      {/* Diagnostics / Test Result Banner */}
+                      {testResult && (
+                        <div
+                          className={`mt-3 p-2.5 rounded-xl text-xs font-mono flex items-center justify-between border ${
+                            testResult.ok
+                              ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                              : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {testResult.ok ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                            ) : (
+                              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                            )}
+                            <span>{testResult.message}</span>
+                          </div>
+                          <button
+                            onClick={() =>
+                              setHubTestResults((prev) => {
+                                const next = { ...prev };
+                                delete next[hub.id];
+                                return next;
+                              })
+                            }
+                            className="text-slate-400 hover:text-white p-0.5 ml-2"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleTestHub(hub)}
-                        disabled={testingHubId === hub.id}
-                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-cyan-400 flex items-center gap-1.5"
-                      >
-                        {testingHubId === hub.id ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5" />}
-                        Test Connection
-                      </button>
-
-                      <button
-                        onClick={() => handleOpenEntityBrowser(hub)}
-                        className="px-3 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 border border-indigo-500/30"
-                      >
-                        <ListFilter className="w-3.5 h-3.5" /> Discovered Entities
-                      </button>
-
-                      <button
-                        onClick={() => handleAutoImportFromHub(hub.id)}
-                        className="px-3 py-1.5 rounded-lg bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-300 text-xs font-semibold flex items-center gap-1.5 border border-cyan-500/30"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" /> 1-Click Import Areas
-                      </button>
-
-                      <button
-                        onClick={() => setEditingHub(hub)}
-                        className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-
-                      <button
-                        onClick={() => handleDeleteHub(hub.id)}
-                        className="p-2 rounded-lg bg-rose-500/20 text-rose-400 hover:bg-rose-500/30"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Add / Edit Hub Form */}
@@ -1278,6 +1498,17 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                       onChange={(e) => setEditingHub({ ...editingHub, access_token: e.target.value })}
                       className="glass-input rounded-xl px-3 py-2 text-xs text-white font-mono"
                     />
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={editingHub.enabled === undefined ? true : !!editingHub.enabled}
+                        onChange={(e) => setEditingHub({ ...editingHub, enabled: e.target.checked ? 1 : 0 })}
+                        className="rounded border-slate-700 text-cyan-500 focus:ring-cyan-500 bg-slate-900"
+                      />
+                      <span>Enable this Home Assistant Hub (Active in DOMINATEE OS)</span>
+                    </label>
                   </div>
                   <div className="flex items-center justify-between pt-2">
                     <button
@@ -2300,8 +2531,13 @@ advanced:
                                   {dev.is_local ? 'LOCAL LAN' : dev.online ? 'CLOUD ONLINE' : 'OFFLINE'}
                                 </span>
                               </div>
-                              <p className="text-[10px] text-slate-400 font-mono">
-                                ID: {dev.id} • Category: <span className="text-amber-400 uppercase">{dev.category}</span>
+                              <p className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5">
+                                ID: {dev.id} • Category: <span className="text-amber-400 uppercase font-bold">{dev.category}</span>
+                                {(dev.category?.toLowerCase().includes('lock') || dev.category?.toLowerCase() === 'ms' || dev.category?.toLowerCase() === 'videolock') && (
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-400 border border-amber-800/40 text-[9px] font-bold">
+                                    SMART LOCK
+                                  </span>
+                                )}
                               </p>
                             </div>
                             <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
@@ -2315,22 +2551,34 @@ advanced:
                           </div>
 
                           <div className="flex items-center justify-end gap-2 pt-1 border-t border-white/5">
-                            <button
-                              type="button"
-                              onClick={() => handleTestTuyaToggle(dev.id, isOn)}
-                              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] font-semibold transition-colors flex items-center gap-1"
-                            >
-                              <RefreshCw className="w-3 h-3" /> Test Toggle
-                            </button>
+                            {dev.category?.toLowerCase().includes('lock') || dev.category?.toLowerCase() === 'ms' || dev.category?.toLowerCase() === 'videolock' ? (
+                              <button
+                                type="button"
+                                onClick={() => handleTestTuyaLock(dev.id, dev.name)}
+                                className="px-2.5 py-1 rounded bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-800/50 text-[11px] font-semibold transition-colors flex items-center gap-1 shadow-glow"
+                                title="Attempt remote unlock via Tuya Cloud API"
+                              >
+                                <Unlock className="w-3 h-3 text-amber-400" /> Test Unlock
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleTestTuyaToggle(dev.id, isOn)}
+                                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] font-semibold transition-colors flex items-center gap-1"
+                              >
+                                <RefreshCw className="w-3 h-3" /> Test Toggle
+                              </button>
+                            )}
 
                             <button
                               type="button"
                               onClick={() => {
                                 const targetRoom = data?.rooms?.[0];
+                                const isLock = dev.category?.toLowerCase().includes('lock') || dev.category?.toLowerCase() === 'ms' || dev.category?.toLowerCase() === 'videolock';
                                 setEditingDevice({
                                   id: '',
                                   room_id: targetRoom?.id || '',
-                                  type: (dev.category.includes('dj') || dev.category.includes('light')) ? 'dimmable_light' : 'switch_light',
+                                  type: isLock ? 'ttlock' : (dev.category.includes('dj') || dev.category.includes('light')) ? 'dimmable_light' : 'switch_light',
                                   name: dev.name,
                                   tuya_device_id: dev.id,
                                   tuya_local_key: dev.local_key || '',
@@ -2339,6 +2587,8 @@ advanced:
                                     tuya_device_id: dev.id,
                                     category: dev.category,
                                     local_key: dev.local_key,
+                                    lockId: isLock ? dev.id : undefined,
+                                    isTuyaLock: isLock,
                                   }),
                                   show_on_default_dashboard: 0,
                                   sort_order: 0,
@@ -3046,14 +3296,47 @@ advanced:
 
               {/* Synced Locks List */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-cyan-400" />
-                    Synced TTLock Smart Locks ({ttlockResult?.locks?.length || (data?.devices || []).filter((d) => d.type === 'ttlock').length})
-                  </h4>
-                  <span className="text-xs text-slate-400">
-                    Discovered via TTLock Open API
-                  </span>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                      Synced TTLock Smart Locks ({ttlockResult?.locks?.length || (data?.devices || []).filter((d) => d.type === 'ttlock').length})
+                    </h4>
+                    <span className="text-xs text-slate-400">
+                      Discovered via TTLock Open API or configured in DOMINATEE
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingDevice({
+                          id: '',
+                          room_id: data?.rooms?.[0]?.id || '',
+                          type: 'ttlock',
+                          name: 'New Smart Lock',
+                          entity_id: '',
+                          config_json: JSON.stringify({ lockId: '' }),
+                          show_on_default_dashboard: 1,
+                          sort_order: 0,
+                        } as Device);
+                        setDeviceModalOpen(true);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-cyan-300 text-xs font-semibold border border-cyan-500/30 flex items-center gap-1.5 transition-all shadow-glow"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Lock Manually
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSyncTtlock}
+                      disabled={syncingTtlock}
+                      className="px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all"
+                    >
+                      {syncingTtlock ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                      Sync From TTLock Cloud
+                    </button>
+                  </div>
                 </div>
 
                 {ttlockResult?.locks && ttlockResult.locks.length > 0 ? (
@@ -3149,6 +3432,184 @@ advanced:
                               {isMapped ? 'Edit Room Mapping' : 'Assign to Room'}
                             </button>
                           </div>
+
+                          {unlockResults[String(lk.lockId)] && (
+                            <div className="mt-2 space-y-2">
+                              <div
+                                className={`p-2.5 rounded-xl text-xs font-mono flex items-center justify-between border ${
+                                  unlockResults[String(lk.lockId)].ok
+                                    ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                                    : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                                }`}
+                              >
+                                <span>{unlockResults[String(lk.lockId)].message}</span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setUnlockResults((prev) => {
+                                      const next = { ...prev };
+                                      delete next[String(lk.lockId)];
+                                      return next;
+                                    })
+                                  }
+                                  className="text-slate-400 hover:text-white p-0.5 ml-2"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              {!unlockResults[String(lk.lockId)].ok &&
+                                unlockResults[String(lk.lockId)].message.includes('Remote Unlock is turned OFF') && (
+                                  <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-200 text-xs space-y-1.5">
+                                    <h6 className="font-bold text-amber-300 flex items-center gap-1.5">
+                                      <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                                      Required: Enable Remote Unlock in TTLock App
+                                    </h6>
+                                    <ol className="list-decimal list-inside space-y-0.5 text-[11px] text-slate-300">
+                                      <li>Open the <strong>TTLock mobile app</strong> near the lock.</li>
+                                      <li>Select <strong>{lk.lockName || `Lock ${lk.lockId}`}</strong>.</li>
+                                      <li>Go to <strong>Settings (Gear icon ⚙️) &rarr; Remote Unlock</strong>.</li>
+                                      <li>Turn the switch <strong>ON</strong> (transfers Bluetooth key to lock).</li>
+                                    </ol>
+                                  </div>
+                                )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (data?.devices || []).some((d) => d.type === 'ttlock') ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {(data?.devices || []).filter((d) => d.type === 'ttlock').map((dev) => {
+                      const cfg = (() => {
+                        try { return JSON.parse(dev.config_json || '{}'); } catch (_) { return {}; }
+                      })();
+                      const isTuyaLock = Boolean(dev.tuya_device_id || cfg.isTuyaLock);
+                      const rawId = isTuyaLock ? (dev.tuya_device_id || cfg.lockId) : (dev.entity_id || cfg.lockId);
+                      const hasValidLockId = Boolean(rawId && !String(rawId).startsWith('dev_'));
+                      const lockId = hasValidLockId ? String(rawId) : '';
+                      const roomName = data?.rooms?.find((r) => r.id === dev.room_id)?.name || 'Unassigned Room';
+                      const isUnlocking = lockId ? unlockingLockId === lockId : false;
+
+                      return (
+                        <div
+                          key={dev.id}
+                          className="glass-panel p-4 rounded-2xl border border-white/10 hover:border-cyan-500/30 transition-all flex flex-col justify-between gap-3"
+                        >
+                          <div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <h5 className="font-bold text-sm text-white flex items-center gap-2">
+                                  <Lock className="w-4 h-4 text-cyan-400" />
+                                  {dev.name}
+                                  <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                                    {roomName}
+                                  </span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase ${
+                                    isTuyaLock ? 'bg-amber-950/70 text-amber-400 border border-amber-800/40' : 'bg-cyan-950/70 text-cyan-400 border border-cyan-800/40'
+                                  }`}>
+                                    {isTuyaLock ? 'Tuya Lock' : 'TTLock'}
+                                  </span>
+                                </h5>
+                                <p className="text-[10px] font-mono text-slate-400 mt-0.5 flex items-center gap-2">
+                                  <span>Lock ID: {lockId || '(Not Set - Click Edit to Assign)'}</span>
+                                  {cfg.lockMac && <span>• MAC: {cfg.lockMac}</span>}
+                                </p>
+                              </div>
+
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                                  hasValidLockId
+                                    ? isTuyaLock ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                }`}
+                              >
+                                {hasValidLockId ? (isTuyaLock ? 'TUYA CLOUD' : 'ACTIVE IN ROOM') : 'MISSING LOCK ID'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!hasValidLockId) {
+                                  showStatus('Please click Edit Device to assign a valid Lock ID first.', true);
+                                  return;
+                                }
+                                if (isTuyaLock) {
+                                  handleTestTuyaLock(lockId, dev.name);
+                                } else {
+                                  handleTestUnlock(lockId);
+                                }
+                              }}
+                              disabled={isUnlocking || !hasValidLockId}
+                              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-40"
+                              title={hasValidLockId ? 'Send unlock signal' : 'Assign Lock ID first'}
+                            >
+                              {isUnlocking ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Unlock className="w-3.5 h-3.5" />
+                              )}
+                              Test Remote Unlock
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingDevice(dev);
+                                setDeviceModalOpen(true);
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-colors"
+                            >
+                              Edit Device &amp; Room
+                            </button>
+                          </div>
+
+                          {lockId && unlockResults[lockId] && (
+                            <div className="mt-2 space-y-2">
+                              <div
+                                className={`p-2.5 rounded-xl text-xs font-mono flex items-center justify-between border ${
+                                  unlockResults[lockId].ok
+                                    ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                                    : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                                }`}
+                              >
+                                <span>{unlockResults[lockId].message}</span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setUnlockResults((prev) => {
+                                      const next = { ...prev };
+                                      delete next[lockId];
+                                      return next;
+                                    })
+                                  }
+                                  className="text-slate-400 hover:text-white p-0.5 ml-2"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              {!unlockResults[lockId].ok &&
+                                unlockResults[lockId].message.includes('Remote Unlock is turned OFF') && (
+                                  <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-200 text-xs space-y-1.5">
+                                    <h6 className="font-bold text-amber-300 flex items-center gap-1.5">
+                                      <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                                      Required: Enable Remote Unlock in TTLock App
+                                    </h6>
+                                    <ol className="list-decimal list-inside space-y-0.5 text-[11px] text-slate-300">
+                                      <li>Open the <strong>TTLock mobile app</strong> near the lock.</li>
+                                      <li>Select <strong>{dev.name}</strong>.</li>
+                                      <li>Go to <strong>Settings (Gear icon ⚙️) &rarr; Remote Unlock</strong>.</li>
+                                      <li>Turn the switch <strong>ON</strong> (transfers Bluetooth key to lock).</li>
+                                    </ol>
+                                  </div>
+                                )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}

@@ -64,13 +64,32 @@ export const LockTestingPage: React.FC = () => {
         </div>
 
         {result && (
-          <div className={`p-4 rounded-xl border text-xs font-mono animate-in fade-in ${
-            result.ok
-              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-              : 'bg-rose-500/15 border-rose-500/30 text-rose-300'
-          }`}>
-            <span className="font-bold">{result.ok ? '✓ Signal Delivered: ' : '✗ Error: '}</span>
-            {result.message}
+          <div className="space-y-3">
+            <div className={`p-4 rounded-xl border text-xs font-mono animate-in fade-in ${
+              result.ok
+                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                : 'bg-rose-500/15 border-rose-500/30 text-rose-300'
+            }`}>
+              <span className="font-bold">{result.ok ? '✓ Signal Delivered: ' : '✗ Error: '}</span>
+              {result.message}
+            </div>
+
+            {!result.ok && result.message?.includes('Remote Unlock is turned OFF') && (
+              <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-200 text-xs space-y-2 animate-in fade-in">
+                <h4 className="font-bold text-amber-300 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  How to Enable Remote Unlock in TTLock App:
+                </h4>
+                <ol className="list-decimal list-inside space-y-1 text-slate-300">
+                  <li>Open the <strong>TTLock (or Sciener) App</strong> on your smartphone.</li>
+                  <li>Stand near the lock with your phone's <strong>Bluetooth turned ON</strong>.</li>
+                  <li>Tap on your lock (e.g. <strong>S503_6a61a8</strong>).</li>
+                  <li>Go to <strong>Settings (Gear icon ⚙️)</strong>.</li>
+                  <li>Find <strong>Remote Unlock</strong> (or <em>Gateway Unlock</em>) and toggle it <strong>ON</strong>.</li>
+                  <li>Once enabled, tap <strong>Send Unlock Signal</strong> again to test!</li>
+                </ol>
+              </div>
+            )}
           </div>
         )}
       </div>

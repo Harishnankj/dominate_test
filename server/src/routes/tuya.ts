@@ -107,5 +107,74 @@ router.post('/devices/manual', (req, res) => {
   }
 });
 
+// 8. Lock Device (all 4 motorized deadbolts via manual_lock:true)
+router.post('/lock', async (req, res) => {
+  try {
+    const { device_id } = req.body;
+    if (!device_id) return res.status(400).json({ error: 'device_id is required' });
+    const result = await tuyaService.lockDevice(device_id);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+// 9. Unlock Device (ticket-based flow)
+router.post('/unlock', async (req, res) => {
+  try {
+    const { device_id } = req.body;
+    if (!device_id) return res.status(400).json({ error: 'device_id is required' });
+    const result = await tuyaService.unlockDevice(device_id);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+// 10. Get Live Lock Status
+router.get('/devices/:device_id/status', async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const result = await tuyaService.getLockStatus(device_id);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+// 11. Generate Dynamic OTP / Temporary Passcode
+router.post('/devices/:device_id/dynamic-password', async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const result = await tuyaService.generateDynamicOtp(device_id);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+// 12. Get Lock Access Logs
+router.get('/devices/:device_id/logs', async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const result = await tuyaService.getLockLogs(device_id);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+// 13. Allocate Live Video Stream for Lock Camera
+router.post('/devices/:device_id/stream', async (req, res) => {
+  try {
+    const { device_id } = req.params;
+    const result = await tuyaService.allocateLiveStream(device_id);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
 export default router;
+
 

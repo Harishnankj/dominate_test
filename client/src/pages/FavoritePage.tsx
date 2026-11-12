@@ -1,8 +1,9 @@
-import React from 'react';
-import { Star, Wand2, Power, Briefcase, Sparkles, Sun, Moon } from 'lucide-react';
+import React, { useState } from 'react';
+import { Star, Wand2, Power, Briefcase, Sparkles, Sun, Moon, Lock } from 'lucide-react';
 import { useBootstrap } from '../context/BootstrapContext';
 import { useAuth } from '../context/AuthContext';
 import { useHA } from '../context/MultiHubHomeAssistantProvider';
+import { ApiService } from '../services/api';
 import { DimmableLightTile } from '../components/devices/DimmableLightTile';
 import { SwitchLightTile } from '../components/devices/SwitchLightTile';
 import { AcIrTile } from '../components/devices/AcIrTile';
@@ -73,6 +74,27 @@ export const FavoritePage: React.FC<FavoritePageProps> = ({ onSelectRoom, onOpen
     }
   };
 
+  const [lockingAll, setLockingAll] = useState(false);
+  const [lockAllMsg, setLockAllMsg] = useState<string | null>(null);
+
+  const handleLockAllDoors = async () => {
+    setLockingAll(true);
+    setLockAllMsg(null);
+    try {
+      const res = await ApiService.lockAllDoors();
+      if (res.ok) {
+        setLockAllMsg(`Locked ${res.locked}/${res.total} doors!`);
+        setTimeout(() => setLockAllMsg(null), 4000);
+      } else {
+        alert('Could not complete Lock All Doors.');
+      }
+    } catch (e: any) {
+      alert(`Lock All error: ${e.message}`);
+    } finally {
+      setLockingAll(false);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-24 animate-in fade-in">
       {/* Quick Routine Bar */}
@@ -85,6 +107,15 @@ export const FavoritePage: React.FC<FavoritePageProps> = ({ onSelectRoom, onOpen
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleLockAllDoors}
+            disabled={lockingAll}
+            className="px-3.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-xs font-semibold text-cyan-300 border border-cyan-500/30 flex items-center gap-1.5 shadow-glow transition-all"
+            title="Lock all connected smart locks across the entire building"
+          >
+            <Lock className="w-3.5 h-3.5 text-cyan-400" />
+            {lockingAll ? 'Locking All...' : lockAllMsg || 'Lock All Doors'}
+          </button>
           <button
             onClick={handleMorningRoutine}
             className="px-3.5 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-xs font-semibold text-amber-300 border border-white/10 flex items-center gap-1.5"

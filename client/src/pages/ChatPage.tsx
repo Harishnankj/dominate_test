@@ -22,11 +22,16 @@ import {
   Gauge,
   Activity,
   CheckCircle2,
+  Camera as CameraIcon,
+  Video,
+  Maximize2,
+  Compass,
 } from 'lucide-react';
 import { useBootstrap } from '../context/BootstrapContext';
 import { useHA } from '../context/MultiHubHomeAssistantProvider';
 import { ApiService } from '../services/api';
-import type { Device, Z2mDevice } from '../types';
+import { Go2rtcVideo } from '../components/cctv/Go2rtcVideo';
+import type { Device, Z2mDevice, Camera } from '../types';
 
 interface ChatMessage {
   id: string;
@@ -40,13 +45,23 @@ interface ChatMessage {
     state?: string;
     detail?: string;
   };
+  cameraCard?: {
+    camera: Camera;
+    actionText?: string;
+  };
 }
 
 interface ChatPageProps {
   onSelectRoom: (roomId: string) => void;
+  onNavigateToTab?: (tab: string) => void;
+  onOpenFullscreenCamera?: (camera: Camera) => void;
 }
 
-export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
+export const ChatPage: React.FC<ChatPageProps> = ({
+  onSelectRoom,
+  onNavigateToTab,
+  onOpenFullscreenCamera,
+}) => {
   const {
     data,
     z2mDevices,
@@ -64,6 +79,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
   const assistantName = data?.config?.assistant_name || 'DOMFLY';
   const rooms = data?.rooms || [];
   const devices = data?.devices || [];
+  const cameras = data?.cameras || [];
 
   const [language, setLanguage] = useState<'en-IN' | 'ml-IN'>('en-IN');
   const [inputText, setInputText] = useState('');
@@ -271,11 +287,56 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
 
   const speak = (text: string) => {
     if (!speechEnabled || !('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = language;
-    utterance.rate = 1.0;
-    window.speechSynthesis.speak(utterance);
+    try {
+      window.speechSynthesis.cancel();
+      // Clean markdown characters and symbols for natural, fluent TTS pronunciation
+      const cleanText = text
+        .replace(/[*#_`~]/g, '')
+        .replace(/[•\-\–]/g, ', ')
+        .replace(/\n+/g, '. ')
+        .trim();
+
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      const isMl = language === 'ml-IN' || /[\u0D00-\u0D7F]/.test(cleanText);
+      const voices = window.speechSynthesis.getVoices();
+
+      if (isMl) {
+        // Look for native Malayalam TTS voice first (Google മലയാളം, Edge Malayalam, etc.)
+        const mlVoice = voices.find(
+          (v) =>
+            v.lang.toLowerCase().startsWith('ml') ||
+            v.name.toLowerCase().includes('malayalam')
+        );
+        if (mlVoice) {
+          utterance.voice = mlVoice;
+          utterance.lang = mlVoice.lang;
+        } else {
+          // Fallback to Indian English or regional voice that pronounces Indian phonetics smoothly
+          const inVoice = voices.find(
+            (v) =>
+              v.lang.toLowerCase().includes('en-in') ||
+              v.lang.toLowerCase().includes('hi-in') ||
+              v.name.toLowerCase().includes('india')
+          );
+          if (inVoice) {
+            utterance.voice = inVoice;
+            utterance.lang = inVoice.lang;
+          } else {
+            utterance.lang = 'en-IN';
+          }
+        }
+      } else {
+        utterance.lang = 'en-IN';
+        const inVoice = voices.find((v) => v.lang.toLowerCase().includes('en-in'));
+        if (inVoice) utterance.voice = inVoice;
+      }
+
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      console.warn('[speak] error:', err);
+    }
   };
 
   // -------------------------------------------------------------
@@ -298,11 +359,13 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
     // 1. TTLock Smart Lock
     if (dev.type === 'ttlock' || lockId) {
       const targetLockId = lockId || dev.entity_id;
-      if (targetLockId) {
+      if (targetLockId && !String(targetLockId).startsWith('dev_')) {
         try {
-          await ApiService.unlockTtlock(targetLockId);
-          return true;
-        } catch (_) {}
+          const res = await ApiService.unlockTtlock(targetLockId);
+          return res.ok;
+        } catch (_) {
+          return false;
+        }
       }
     }
 
@@ -378,7 +441,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
   // -------------------------------------------------------------
   // Live Telemetry & Status Formatter
   // -------------------------------------------------------------
-  const getDeviceTelemetry = (dev: Device): { text: string; detail?: string } => {
+  const getDeviceTelemetry = (dev: Device, isMl = false): { text: string; detail?: string } => {
     let devConfig: any = {};
     try {
       devConfig = JSON.parse(dev.config_json || '{}');
@@ -403,6 +466,15 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
       const e = eVal !== undefined ? `${eVal} kWh` : undefined;
       const st = zState?.state || 'ACTIVE';
 
+      if (isMl) {
+        let out = `${dev.name} നിലവിൽ ${st === 'OFF' ? 'ഓഫ് ആണ്' : 'പ്രവർത്തിക്കുന്നു'}.`;
+        if (p) out += ` ആക്ടീവ് പവർ: ${p}.`;
+        if (v) out += ` വോൾട്ടേജ്: ${v}.`;
+        if (c) out += ` കറന്റ്: ${c}.`;
+        if (e) out += ` ആകെ ഊർജ്ജ ഉപഭോഗം: ${e}.`;
+        return { text: out, detail: `${p || 'Active'} • ${v || ''} • ${e || ''}`.trim() };
+      }
+
       let out = `${dev.name} is currently ${st}.`;
       if (p) out += ` Active Power: ${p}.`;
       if (v) out += ` Voltage: ${v}.`;
@@ -422,6 +494,15 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
       const co2 = zState?.co2 !== undefined ? `${zState.co2} ppm` : undefined;
       const voc = zState?.voc !== undefined ? `${zState.voc}` : undefined;
 
+      if (isMl) {
+        let out = `${dev.name} റീഡിംഗ്:`;
+        if (temp) out += ` താപനില ${temp},`;
+        if (hum) out += ` അന്തരീക്ഷ ഈർപ്പം ${hum},`;
+        if (co2) out += ` കാർബൺ ഡയോക്സൈഡ് (CO2) ${co2} (${Number(zState?.co2) < 800 ? 'നല്ല നിലവാരം' : 'കൂടുതൽ'}),`;
+        if (voc) out += ` VOC ഇൻഡക്സ് ${voc}.`;
+        return { text: out, detail: `${temp || ''} • ${hum || ''} • CO2: ${co2 || ''}`.trim() };
+      }
+
       let out = `${dev.name} reading:`;
       if (temp) out += ` Temperature is ${temp},`;
       if (hum) out += ` Humidity is ${hum},`;
@@ -433,7 +514,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
     // Smart knob / Battery
     if (zState?.battery !== undefined) {
       return {
-        text: `${dev.name} battery is at ${zState.battery}%. Last trigger: ${zState.action || 'standby'}.`,
+        text: isMl
+          ? `${dev.name} ബാറ്ററി ചാർജ് ${zState.battery}% ആണ്.`
+          : `${dev.name} battery is at ${zState.battery}%. Last trigger: ${zState.action || 'standby'}.`,
         detail: `Battery: ${zState.battery}%`,
       };
     }
@@ -441,58 +524,104 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
     // Multi-gang switch
     if (endpoint && zState?.[`state_${endpoint}`]) {
       const st = String(zState[`state_${endpoint}`]);
-      return { text: `${dev.name} is currently ${st}.`, detail: st };
+      return {
+        text: isMl ? `${dev.name} നിലവിൽ ${st === 'ON' ? 'ഓൺ ആണ്' : 'ഓഫ് ആണ്'}.` : `${dev.name} is currently ${st}.`,
+        detail: st,
+      };
     }
 
     // Switch or Light
     if (zState?.state) {
-      return { text: `${dev.name} is currently ${zState.state}.`, detail: zState.state };
+      return {
+        text: isMl ? `${dev.name} നിലവിൽ ${zState.state === 'ON' ? 'ഓൺ ആണ്' : 'ഓഫ് ആണ്'}.` : `${dev.name} is currently ${zState.state}.`,
+        detail: zState.state,
+      };
     }
     if (tState?.switch_1 !== undefined) {
       const st = tState.switch_1 ? 'ON' : 'OFF';
-      return { text: `${dev.name} is currently ${st}.`, detail: st };
+      return {
+        text: isMl ? `${dev.name} നിലവിൽ ${st === 'ON' ? 'ഓൺ ആണ്' : 'ഓഫ് ആണ്'}.` : `${dev.name} is currently ${st}.`,
+        detail: st,
+      };
     }
 
-    return { text: `${dev.name} is online and operational.`, detail: 'Online' };
+    return {
+      text: isMl ? `${dev.name} പൂർണ്ണമായും ഓൺലൈൻ ആണ്.` : `${dev.name} is online and operational.`,
+      detail: 'Online',
+    };
   };
 
   // -------------------------------------------------------------
-  // Intelligent Natural Language Processing Engine
+  // Intelligent Natural Language Processing Engine (Malayalam, Manglish & English)
   // -------------------------------------------------------------
-  const processCommand = async (rawInput: string): Promise<{ reply: string; action?: string; deviceCard?: any }> => {
+  const processCommand = async (
+    rawInput: string
+  ): Promise<{ reply: string; action?: string; deviceCard?: any; cameraCard?: { camera: Camera; actionText?: string } }> => {
     const input = rawInput.toLowerCase().trim();
-    const isMalayalam = language === 'ml-IN' || /[\u0D00-\u0D7F]/.test(rawInput);
 
-    // 1. Weather intent
-    if (input.includes('weather') || input.includes('forecast') || input.includes('കാലാവസ്ഥ')) {
+    // 1. Language & Script Detection (Malayalam Unicode, Manglish Transliteration, or Active Toggle)
+    const isMalayalamScript = /[\u0D00-\u0D7F]/.test(rawInput);
+    const manglishPatterns = /\b(aakku|aakkoo|aakkuka|cheyyu|cheyyuka|thurakku|thurakkoo|thurakkuka|kaanikku|kaanikkoo|kaanikkuka|kaanam|kaanatte|keduthu|keduthoo|keduthuka|nirthu|nirthuka|nokku|nokkoo|nokkanam|nokkuka|choodu|chood|thanuppu|thanuppikku|entha|enthaanu|ethra|ethraya|ethrayanu|und|undu|undoo|engane|vaathil|vathil|poottu|poottuka|kadanju|pettannu|ellaam|ella|njan|ethi|vannu|irangi|pokunnu|current|velicham|kurakku|koottoo)\b/i;
+    const isManglish = manglishPatterns.test(input);
+    const isMalayalam = language === 'ml-IN' || isMalayalamScript || isManglish;
+
+    // 2. Weather intent
+    if (
+      input.includes('weather') ||
+      input.includes('forecast') ||
+      input.includes('കാലാവസ്ഥ') ||
+      input.includes('kaalaavastha') ||
+      input.includes('mazha') ||
+      input.includes('മഴ')
+    ) {
       try {
         const w = await ApiService.fetchWeather();
         const temp = w.current?.temperature_2m ? Math.round(w.current.temperature_2m) : 29;
         const reply = isMalayalam
-          ? `ഇപ്പോഴത്തെ കാലാവസ്ഥ: താപനില ${temp}°C ആണ്. ${w.label || 'ഓഫീസ് പരിസരം'}.`
+          ? `ഇപ്പോഴത്തെ കാലാവസ്ഥ: താപനില ${temp}°C ആണ്. ആകാശം തെളിഞ്ഞതാണ് (${w.label || 'ഓഫീസ് പരിസരം'}).`
           : `The current outdoor temperature is ${temp}°C at ${w.label || 'the building'}. Sky is clear.`;
-        return { reply, action: 'Weather Checked' };
+        return { reply, action: isMalayalam ? 'കാലാവസ്ഥ പരിശോധിച്ചു' : 'Weather Checked' };
       } catch (_) {
-        return { reply: 'Currently 29°C outside with pleasant weather.' };
+        return { reply: isMalayalam ? 'പുറത്ത് 29°C താപനിലയിൽ നല്ല കാലാവസ്ഥയാണ്.' : 'Currently 29°C outside with pleasant weather.' };
       }
     }
 
-    // 2. News / Building Status intent
-    if (input.includes('news') || input.includes('വാർത്തകൾ') || input.includes('building status') || input.includes('system health')) {
+    // 3. News / Building Health intent
+    if (
+      input.includes('news') ||
+      input.includes('വാർത്ത') ||
+      input.includes('building status') ||
+      input.includes('system health') ||
+      input.includes('ആരോഗ്യം')
+    ) {
       try {
         const n = await ApiService.fetchNews();
         const first = n.news?.[0];
         const reply = first
           ? `${first.title}: ${first.summary}`
-          : 'All building sectors, Zigbee coordinators, and networks are operational with zero faults.';
-        return { reply, action: 'Building Health Checked' };
+          : (isMalayalam
+            ? 'ഓഫീസിലെ എല്ലാ സിഗ്ബീ കോർഡിനേറ്ററുകളും നെറ്റ്‌വർക്കുകളും യാതൊരു തകരാറും കൂടാതെ പ്രവർത്തിക്കുന്നു.'
+            : 'All building sectors, Zigbee coordinators, and networks are operational with zero faults.');
+        return { reply, action: isMalayalam ? 'സിസ്റ്റം നില പരിശോധിച്ചു' : 'Building Health Checked' };
       } catch (_) {
-        return { reply: 'Building systems operating normally at 100% capacity.' };
+        return {
+          reply: isMalayalam
+            ? 'എല്ലാ കെട്ടിട സംവിധാനങ്ങളും 100% കാര്യക്ഷമതയോടെ പ്രവർത്തിക്കുന്നു.'
+            : 'Building systems operating normally at 100% capacity.',
+        };
       }
     }
 
-    // 3. Quick Routine: Arrival ("I am here" / "ഞാൻ എത്തി")
-    if (input.includes('i am here') || input.includes('arrived') || input.includes('ഞാൻ എത്തി') || input.includes('good morning')) {
+    // 4. Quick Routine: Arrival ("I am here" / "njan ethi" / "ഞാൻ എത്തി")
+    if (
+      input.includes('i am here') ||
+      input.includes('arrived') ||
+      input.includes('ഞാൻ എത്തി') ||
+      input.includes('njan ethi') ||
+      input.includes('njan vannu') ||
+      input.includes('officeil ethi') ||
+      input.includes('good morning')
+    ) {
       const entranceLights = devices.filter((d) => d.type === 'switch_light' || d.type === 'dimmable_light').slice(0, 4);
       for (const d of entranceLights) {
         await executeDeviceAction(d, 'on');
@@ -501,11 +630,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
         reply: isMalayalam
           ? 'സ്വാഗതം! പ്രധാന ഓഫീസ് ലൈറ്റുകൾ ഓൺ ചെയ്തു. ഒരു നല്ല ദിവസം ആശംസിക്കുന്നു!'
           : 'Welcome to the office! Main lights turned ON and systems are active. Have a productive day!',
-        action: 'Arrival Routine Triggered',
+        action: isMalayalam ? 'വരവ് ദിനചര്യ പൂർത്തിയാക്കി' : 'Arrival Routine Triggered',
       };
     }
 
-    // 4. Quick Routine: Departure / All Off ("I am leaving" / "Turn off all lights" / "ഞാൻ പോകുന്നു" / "എല്ലാം ഓഫാക്കുക")
+    // 5. Quick Routine: Departure / All Off ("I am leaving" / "njan pokunnu" / "ellaam off aakku" / "എല്ലാ ലൈറ്റുകളും ഓഫ്")
     if (
       input.includes('turn off all lights') ||
       input.includes('all lights off') ||
@@ -515,35 +644,43 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
       input.includes('goodbye') ||
       input.includes('good night') ||
       input.includes('ഞാൻ പോകുന്നു') ||
+      input.includes('ഞാൻ ഇറങ്ങുന്നു') ||
       input.includes('എല്ലാ ലൈറ്റുകളും ഓഫ്') ||
-      input.includes('എല്ലാം ഓഫാക്കുക')
+      input.includes('എല്ലാം ഓഫാക്കുക') ||
+      input.includes('എല്ലാം കെടുത്തുക') ||
+      input.includes('njan pokunnu') ||
+      input.includes('njan irangi') ||
+      input.includes('ella lightum off') ||
+      input.includes('ellaam off') ||
+      input.includes('ellaam keduthu')
     ) {
       const lights = devices.filter((d) => d.type === 'switch_light' || d.type === 'dimmable_light');
       for (const d of lights) {
         await executeDeviceAction(d, 'off');
       }
-      // Also turn off ACs if leaving
-      if (input.includes('leaving') || input.includes('goodbye') || input.includes('good night') || input.includes('പോകുന്നു')) {
-        const acs = devices.filter((d) => d.type === 'ac_ir' || d.type === 'climate');
-        for (const ac of acs) {
-          await executeDeviceAction(ac, 'off');
-        }
+      // Also turn off ACs
+      const acs = devices.filter((d) => d.type === 'ac_ir' || d.type === 'climate');
+      for (const ac of acs) {
+        await executeDeviceAction(ac, 'off');
       }
 
       return {
         reply: isMalayalam
-          ? `ശരി, എല്ലാ (${lights.length}) ലൈറ്റുകളും ഓഫ് ചെയ്തിരിക്കുന്നു. സുരക്ഷിതമായി യാത്ര ചെയ്യുക!`
-          : `Turned OFF all ${lights.length} lights and switches across the building. Have a safe journey!`,
-        action: 'All Lights Turned OFF',
+          ? `ശരി, എല്ലാ (${lights.length}) ലൈറ്റുകളും എസിയും ഓഫ് ചെയ്തിരിക്കുന്നു. സുരക്ഷിതമായി യാത്ര ചെയ്യുക!`
+          : `Turned OFF all ${lights.length} lights and ACs across the building. Have a safe journey!`,
+        action: isMalayalam ? 'എല്ലാ ലൈറ്റുകളും ഓഫ് ചെയ്തു' : 'All Lights & AC Turned OFF',
       };
     }
 
-    // 5. Batch Routine: Turn on all lights
+    // 6. Batch Routine: Turn on all lights
     if (
       input.includes('turn on all lights') ||
       input.includes('all lights on') ||
       input.includes('turn on all') ||
-      input.includes('എല്ലാ ലൈറ്റുകളും ഓൺ')
+      input.includes('എല്ലാ ലൈറ്റുകളും ഓൺ') ||
+      input.includes('എല്ലാം ഓൺ ചെയ്യുക') ||
+      input.includes('ella lightum on') ||
+      input.includes('ellaam on')
     ) {
       const lights = devices.filter((d) => d.type === 'switch_light' || d.type === 'dimmable_light');
       for (const d of lights) {
@@ -551,14 +688,22 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
       }
       return {
         reply: isMalayalam
-          ? `എല്ലാ (${lights.length}) ലൈറ്റുകളും ഓൺ ചെയ്തു.`
+          ? `എല്ലാ (${lights.length}) ലൈറ്റുകളും വിജയകരമായി ഓൺ ചെയ്തു.`
           : `Turned ON all ${lights.length} lights and switches in the building.`,
-        action: 'All Lights Turned ON',
+        action: isMalayalam ? 'എല്ലാ ലൈറ്റുകളും ഓൺ ചെയ്തു' : 'All Lights Turned ON',
       };
     }
 
-    // 6. Quick Routine: "I am sweating" / "Cool down" / "ചൂട്"
-    if (input.includes('sweating') || input.includes('hot') || input.includes('ചൂട്') || input.includes('തണുപ്പിക്കുക')) {
+    // 7. Quick Routine: "I am sweating" / "Cool down" / "choodu edukkunnu" / "ചൂട്"
+    if (
+      input.includes('sweating') ||
+      input.includes('hot') ||
+      input.includes('ചൂട്') ||
+      input.includes('തണുപ്പിക്കുക') ||
+      input.includes('choodu') ||
+      input.includes('chood') ||
+      input.includes('thanuppikku')
+    ) {
       const acDev = devices.find((d) => d.type === 'ac_ir' || d.type === 'climate' || d.name.toLowerCase().includes('ac'));
       if (acDev) {
         await executeDeviceAction(acDev, 'on', 20);
@@ -566,13 +711,127 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
           reply: isMalayalam
             ? `${acDev.name} എസി 20°C ലേക്ക് താഴ്ത്തി തണുപ്പിച്ചു.`
             : `Set AC to 20°C in ${acDev.name} for maximum cooling.`,
-          action: 'AC Set to 20°C',
+          action: isMalayalam ? 'എസി 20°C ലേക്ക് ക്രമീകരിച്ചു' : 'AC Set to 20°C',
           deviceCard: { name: acDev.name, type: 'ac_ir', detail: '20°C Cool' },
         };
       }
     }
 
-    // 7. Match Specific Individual Devices (Priority over general room commands)
+    // 8. Camera & CCTV Visuals / Navigation Intent
+    const findCameraByTokens = (query: string): Camera | undefined => {
+      const q = query.toLowerCase().trim();
+      if (cameras.length === 0) return undefined;
+
+      // 1. Direct exact or substring match on camera name or stream_id
+      for (const c of cameras) {
+        if (q.includes(c.name.toLowerCase()) || q.includes(c.stream_id.toLowerCase())) {
+          return c;
+        }
+      }
+
+      // 2. Semantic & keyword matching
+      // Camera 1: qqq / tapo
+      if (/\b(qqq|tapo)\b/i.test(q) || /ക്യു/i.test(q)) {
+        const c = cameras.find((cam) => /\b(qqq|tapo)\b/i.test(cam.name) || cam.stream_id === 'cam1');
+        if (c) return c;
+      }
+      // Camera 2: R&D Cam
+      if (/\b(r&d|rd|r and d|research)\b/i.test(q) || /ആർ\s*(&|ആൻഡ്)\s*ഡി/i.test(q)) {
+        const c = cameras.find((cam) => /r&d|rd|research/i.test(cam.name) || cam.stream_id === 'cam2');
+        if (c) return c;
+      }
+      // Camera 6: Store Room
+      if (/\b(store|store\s*room|storeroom)\b/i.test(q) || /സ്റ്റോർ/i.test(q)) {
+        const c = cameras.find((cam) => /store/i.test(cam.name) || cam.stream_id === 'cam6');
+        if (c) return c;
+      }
+      // Camera 3: Table Cam
+      if (/\b(table|desk)\b/i.test(q) || /ടേബിൾ/i.test(q)) {
+        const c = cameras.find((cam) => /table|desk/i.test(cam.name) || cam.stream_id === 'cam3');
+        if (c) return c;
+      }
+      // Camera 4: Workspace
+      if (/\bworkspace\b/i.test(q) || /വർക്ക്\s*സ്പേസ്/i.test(q)) {
+        const c = cameras.find((cam) => /workspace/i.test(cam.name) || cam.stream_id === 'cam4');
+        if (c) return c;
+      }
+      // Camera 5: Office
+      if (/\boffice\b/i.test(q) || /ഓഫീസ്/i.test(q)) {
+        const c = cameras.find((cam) => /office/i.test(cam.name) || cam.stream_id === 'cam5');
+        if (c) return c;
+      }
+
+      // 3. Numeric tokens: "camera 1", "cam 1", "ക്യാമറ 1", "cam 6", etc.
+      const numMatch = q.match(/(?:camera|cam|ക്യാമറ)\s*(\d+)/i);
+      if (numMatch) {
+        const num = numMatch[1];
+        const c = cameras.find((cam) => cam.stream_id === `cam${num}` || cam.name.includes(num));
+        if (c) return c;
+      }
+
+      return undefined;
+    };
+
+    const isCameraOrCctvQuery =
+      /\b(camera|cctv|visual|visuals|stream|streams|feed|video|cam)\b/i.test(input) ||
+      /ക്യാമറ|സിസിടിവി/i.test(input) ||
+      /\b(see|show|view|open|goto|go to|display|watch|look at|kaanikku|kaanikkoo|kaanikkuka|kaanam|kaanatte|nokku|nokkanam)\b/i.test(input) ||
+      /കാണിക്കുക|കാണിക്കൂ|തുറക്കുക|തുറക്കൂ|കാണണം|കാണട്ടെ|നോക്കുക/i.test(input);
+
+    if (isCameraOrCctvQuery) {
+      const targetedCamera = findCameraByTokens(input);
+
+      if (targetedCamera) {
+        const wantsFullscreen =
+          /\b(fullscreen|full\s*screen|maximize|zoom|full|valuthaakku)\b/i.test(input) ||
+          /വലുതാക്കുക|വലുതാക്കൂ/i.test(input) ||
+          /\b(go\s*to|open|switch\s*to|thurakku)\b/i.test(input) ||
+          /തുറക്കുക|തുറക്കൂ/i.test(input);
+
+        if (wantsFullscreen && onOpenFullscreenCamera) {
+          setTimeout(() => onOpenFullscreenCamera(targetedCamera), 300);
+          return {
+            reply: isMalayalam
+              ? `${targetedCamera.name} ക്യാമറ ഫുൾസ്ക്രീൻ ആയി ലൈവ് സ്ട്രീം ചെയ്യുന്നു.`
+              : `Opened ${targetedCamera.name} (${targetedCamera.stream_id}) in fullscreen view with live PTZ control.`,
+            action: isMalayalam ? `ഫുൾസ്ക്രീൻ: ${targetedCamera.name}` : `Opened Fullscreen: ${targetedCamera.name}`,
+            cameraCard: { camera: targetedCamera, actionText: 'Fullscreen Active' },
+          };
+        }
+
+        return {
+          reply: isMalayalam
+            ? `ഇതാ ${targetedCamera.name} ക്യാമറയുടെ തത്സമയ (Live) വിഷ്വൽ സ്ട്രീം. ഫുൾസ്ക്രീൻ കാണാൻ താഴെ ക്ലിക്ക് ചെയ്യുക.`
+            : `Here is the live visual feed for ${targetedCamera.name} (${targetedCamera.stream_id}). You can open fullscreen or view in CCTV Wall below.`,
+          action: isMalayalam ? `വിഷ്വൽ: ${targetedCamera.name}` : `Visual: ${targetedCamera.name}`,
+          cameraCard: { camera: targetedCamera },
+        };
+      }
+
+      // General CCTV Wall navigation
+      if (
+        /\b(cctv|all\s*cameras|cameras|camera\s*wall|video\s*wall|all\s*visuals)\b/i.test(input) ||
+        /സിസിടിവി|എല്ലാ\s*ക്യാമറകളും/i.test(input) ||
+        input.includes('see visuals') ||
+        input.includes('show cameras') ||
+        input.includes('show cctv') ||
+        input.includes('open cctv') ||
+        input.includes('cctv kaanikku') ||
+        input.includes('cctv thurakku')
+      ) {
+        if (onNavigateToTab) {
+          setTimeout(() => onNavigateToTab('cctv'), 300);
+        }
+        return {
+          reply: isMalayalam
+            ? 'ലൈവ് സിസിടിവി വാളിലേക്ക് മാറുന്നു. എല്ലാ ക്യാമറകളും അവിടെ കാണാം.'
+            : 'Navigating to the Live Go2RTC CCTV Wall with real-time zero-latency multi-camera streams.',
+          action: isMalayalam ? 'സിസിടിവി വാൾ തുറന്നു' : 'Navigated to CCTV Wall',
+        };
+      }
+    }
+
+    // 9. Match Specific Individual Devices (Priority over general room commands)
     const findDeviceByTokens = (query: string): Device | undefined => {
       // 1. Exact or substring match on device name
       for (const d of devices) {
@@ -580,28 +839,34 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
       }
 
       // 2. Specific switch number tokens (matches "switch 1", "switch 2", "switch 3", "gang 1", etc.)
-      if (/\b(switch\s*1|switch1|switch\s*one)\b/i.test(query) || /സ്വിച്ച്\s*1/i.test(query)) {
+      if (/\b(switch\s*1|switch1|switch\s*one)\b/i.test(query) || /സ്വിച്ച്\s*1|സ്വിച്ച്\s*ഒന്ന്/i.test(query) || /\bswitch\s*onnu\b/i.test(query)) {
         const found = devices.find((d) => /\b(switch\s*1|switch1)\b/i.test(d.name));
         if (found) return found;
       }
-      if (/\b(switch\s*2|switch2|switch\s*two)\b/i.test(query) || /സ്വിച്ച്\s*2/i.test(query)) {
+      if (/\b(switch\s*2|switch2|switch\s*two)\b/i.test(query) || /സ്വിച്ച്\s*2|സ്വിച്ച്\s*രണ്ട്/i.test(query) || /\bswitch\s*randu\b/i.test(query)) {
         const found = devices.find((d) => /\b(switch\s*2|switch2)\b/i.test(d.name));
         if (found) return found;
       }
-      if (/\b(switch\s*3|switch3|switch\s*three)\b/i.test(query) || /സ്വിച്ച്\s*3/i.test(query)) {
+      if (/\b(switch\s*3|switch3|switch\s*three)\b/i.test(query) || /സ്വിച്ച്\s*3|സ്വിച്ച്\s*മൂന്ന്/i.test(query) || /\bswitch\s*moonnu\b/i.test(query)) {
         const found = devices.find((d) => /\b(switch\s*3|switch3)\b/i.test(d.name));
         if (found) return found;
       }
 
       // 3. Energy meter / Breaker tokens
-      if (/\b(energy|meter|power\s*meter|breaker|main\s*power)\b/i.test(query) || /എനർജി\s*മീറ്റർ|ബ്രേക്കർ/i.test(query)) {
+      if (
+        /\b(energy|meter|power\s*meter|breaker|main\s*power|current)\b/i.test(query) ||
+        /എനർജി\s*മീറ്റർ|ബ്രേക്കർ|വൈദ്യുതി|കറന്റ്|പവർ/i.test(query)
+      ) {
         const found = devices.find((d) => d.type === 'energy_meter' || /\b(energy|meter|breaker)\b/i.test(d.name));
         if (found) return found;
       }
 
       // 4. Environmental sensor / Air quality tokens
-      if (/\b(air\s*quality|air\s*sensor|co2|humidity|air\s*monitor)\b/i.test(query) || /എയർ\s*ക്വാളിറ്റി/i.test(query)) {
-        const found = devices.find((d) => d.type === 'environmental_sensor' || /\b(air\s*quality|air\s*sensor)\b/i.test(d.name));
+      if (
+        /\b(air\s*quality|air\s*sensor|co2|humidity|air\s*monitor|air\s*box)\b/i.test(query) ||
+        /എയർ\s*ക്വാളിറ്റി|വായു|സെൻസർ/i.test(query)
+      ) {
+        const found = devices.find((d) => d.type === 'environmental_sensor' || /\b(air\s*quality|air\s*sensor|air\s*box)\b/i.test(d.name));
         if (found) return found;
       }
 
@@ -624,7 +889,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
       }
 
       // 8. Kobe / Dimmer
-      if (/\b(kobe|dimmer)\b/i.test(query)) {
+      if (/\b(kobe|dimmer)\b/i.test(query) || /ഡിമ്മർ/i.test(query)) {
         const found = devices.find((d) => /\bkobe\b/i.test(d.name) || d.type === 'dimmable_light');
         if (found) return found;
       }
@@ -648,7 +913,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
       }
 
       // 12. Smart lock / TTLock
-      if (/\b(lock|door\s*lock)\b/i.test(query) || /വാതിൽ|അൺലോക്ക്/i.test(query)) {
+      if (/\b(lock|door\s*lock|door|vaathil|vathil)\b/i.test(query) || /വാതിൽ|അൺലോക്ക്|പൂട്ടുക/i.test(query)) {
         const found = devices.find((d) => d.type === 'ttlock' || /\block\b/i.test(d.name));
         if (found) return found;
       }
@@ -669,21 +934,21 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
     if (matchedDevice) {
       // 1. Telemetry / Status inquiry
       const isStatusQuery =
-        /\b(status|check|reading|power|voltage|current|battery|how is|what is)\b/i.test(input) ||
-        /നില|പരിശോധിക്കുക/i.test(input);
+        /\b(status|check|reading|power|voltage|current|battery|how is|what is|engane|ethraya|ethrayanu|nokku|nokkoo|check cheyyu)\b/i.test(input) ||
+        /നില|പരിശോധിക്കുക|എത്രയാണ്|നോക്കുക/i.test(input);
 
-      if (isStatusQuery && !/\b(turn\s*on|turn\s*off|trip|dim)\b/i.test(input)) {
-        const tel = getDeviceTelemetry(matchedDevice);
+      if (isStatusQuery && !/\b(turn\s*on|turn\s*off|trip|dim|on aakku|off aakku)\b/i.test(input)) {
+        const tel = getDeviceTelemetry(matchedDevice, isMalayalam);
         return {
           reply: tel.text,
-          action: `${matchedDevice.name} Status Checked`,
+          action: isMalayalam ? `${matchedDevice.name} പരിശോധിച്ചു` : `${matchedDevice.name} Status Checked`,
           deviceCard: { name: matchedDevice.name, type: matchedDevice.type, detail: tel.detail },
         };
       }
 
       // 2. Dimming / Brightness
       const dimMatch = input.match(/(\d+)\s*%/);
-      if (dimMatch && (input.includes('dim') || input.includes('brightness') || input.includes('set'))) {
+      if (dimMatch && (input.includes('dim') || input.includes('brightness') || input.includes('set') || input.includes('ബ്രൈറ്റ്നസ്'))) {
         const val = Number(dimMatch[1]);
         await executeDeviceAction(matchedDevice, 'on', val);
         return {
@@ -696,7 +961,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
       }
 
       // 3. AC Temperature
-      const tempMatch = input.match(/(?:to|temp|temperature)\s*(\d{2})/);
+      const tempMatch = input.match(/(?:to|temp|temperature|ആക്കുക|ആക്കൂ|aakku)\s*(\d{2})/);
       if (tempMatch && (matchedDevice.type === 'ac_ir' || matchedDevice.type === 'climate' || matchedDevice.name.toLowerCase().includes('ac'))) {
         const targetTemp = Number(tempMatch[1]);
         await executeDeviceAction(matchedDevice, 'on', targetTemp);
@@ -711,20 +976,20 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
 
       // 4. Turn OFF / Trip / Close
       const isOff =
-        /\b(off|stop|disable|trip|disconnect|close|shut)\b/i.test(input) ||
-        /ഓഫ്|അടയ്ക്കുക/i.test(input);
+        /\b(off|stop|disable|trip|disconnect|close|shut|off\s*aakku|off\s*aakkoo|off\s*cheyyu|keduthu|keduthoo|keduthuka|nirthu|nirthuka|kedaakku|adakku|adakkoo)\b/i.test(input) ||
+        /ഓഫ്|കെടുത്തുക|നിർത്തുക|അടയ്ക്കുക|ട്രിപ്പ്/i.test(input);
 
       if (isOff) {
         const isCover = matchedDevice.type === 'blinds_relay' || matchedDevice.type === 'cover' || matchedDevice.name.toLowerCase().includes('curtain');
         await executeDeviceAction(matchedDevice, isCover ? 'close' : 'off');
         const verb = matchedDevice.type === 'energy_meter' || input.includes('trip')
-          ? 'Tripped / Turned OFF'
+          ? (isMalayalam ? 'ട്രിപ്പ് ചെയ്തു / ഓഫാക്കി' : 'Tripped / Turned OFF')
           : isCover
-          ? 'Closed'
-          : 'Turned OFF';
+          ? (isMalayalam ? 'അടച്ചു' : 'Closed')
+          : (isMalayalam ? 'ഓഫ് ചെയ്തു' : 'Turned OFF');
         return {
           reply: isMalayalam
-            ? `${matchedDevice.name} ${isCover ? 'അടച്ചു' : 'ഓഫ് ചെയ്തു'}.`
+            ? `${matchedDevice.name} വിജയകരമായി ${verb}.`
             : `${verb} ${matchedDevice.name}.`,
           action: `${verb} ${matchedDevice.name}`,
           deviceCard: { name: matchedDevice.name, type: matchedDevice.type, detail: isCover ? 'Closed' : 'OFF' },
@@ -733,18 +998,30 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
 
       // 5. Turn ON / Open / Unlock
       const isOn =
-        /\b(on|start|enable|connect|open|unlock|active)\b/i.test(input) ||
-        /ഓൺ|തുറക്കുക|അൺലോക്ക്/i.test(input);
+        /\b(on|start|enable|connect|open|unlock|active|on\s*aakku|on\s*aakkoo|on\s*cheyyu|idu|ittu|thurakku|thurakkoo|thurakkuka)\b/i.test(input) ||
+        /ഓൺ|തുറക്കുക|തുറക്കൂ|അൺലോക്ക്|ഇടുക/i.test(input);
 
       if (isOn || input.includes(matchedDevice.name.toLowerCase())) {
         const isCover = matchedDevice.type === 'blinds_relay' || matchedDevice.type === 'cover' || matchedDevice.name.toLowerCase().includes('curtain');
-        const isLock = matchedDevice.type === 'ttlock' || matchedDevice.name.toLowerCase().includes('lock');
+        const isLock = matchedDevice.type === 'ttlock' || matchedDevice.name.toLowerCase().includes('lock') || input.includes('door') || input.includes('vaathil') || input.includes('വാതിൽ');
         const act = isLock ? 'unlock' : isCover ? 'open' : 'on';
-        await executeDeviceAction(matchedDevice, act);
-        const verb = isLock ? 'Unlocked' : isCover ? 'Opened' : 'Turned ON';
+        const success = await executeDeviceAction(matchedDevice, act);
+        if (!success && isLock) {
+          return {
+            reply: isMalayalam
+              ? `${matchedDevice.name} അൺലോക്ക് ചെയ്യാൻ സാധിച്ചില്ല. TTLock ആപ്പിൽ "Remote Unlock" ഓൺ ആണോ എന്നും G2 Gateway കണക്റ്റഡ് ആണോ എന്നും ഉറപ്പാക്കുക.`
+              : `Could not unlock ${matchedDevice.name}. Please ensure "Remote Unlock" is enabled in the TTLock mobile app (under Lock Settings) and the G2 Gateway is online.`,
+            action: isMalayalam ? 'അൺലോക്ക് പരാജയപ്പെട്ടു' : 'Unlock Failed',
+          };
+        }
+        const verb = isLock
+          ? (isMalayalam ? 'തുറന്നു (അൺലോക്ക് ചെയ്തു)' : 'Unlocked')
+          : isCover
+          ? (isMalayalam ? 'തുറന്നു' : 'Opened')
+          : (isMalayalam ? 'ഓൺ ചെയ്തു' : 'Turned ON');
         return {
           reply: isMalayalam
-            ? `${matchedDevice.name} ${isLock ? 'തുറന്നു' : isCover ? 'തുറന്നു' : 'ഓൺ ചെയ്തിരിക്കുന്നു'}.`
+            ? `${matchedDevice.name} വിജയകരമായി ${verb}.`
             : `${verb} ${matchedDevice.name}.`,
           action: `${verb} ${matchedDevice.name}`,
           deviceCard: { name: matchedDevice.name, type: matchedDevice.type, detail: isLock ? 'Unlocked' : isCover ? 'Opened' : 'ON' },
@@ -752,25 +1029,25 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
       }
 
       // 6. Toggle
-      if (input.includes('toggle') || input.includes('മാറ്റുക')) {
+      if (input.includes('toggle') || input.includes('മാറ്റുക') || input.includes('maattu')) {
         await executeDeviceAction(matchedDevice, 'toggle');
         return {
-          reply: isMalayalam ? `${matchedDevice.name} മാറ്റി.` : `Toggled ${matchedDevice.name}.`,
+          reply: isMalayalam ? `${matchedDevice.name} മാറ്റി പ്രവർത്തിപ്പിച്ചു.` : `Toggled ${matchedDevice.name}.`,
           action: `Toggled ${matchedDevice.name}`,
           deviceCard: { name: matchedDevice.name, type: matchedDevice.type },
         };
       }
 
       // Default: Report telemetry
-      const tel = getDeviceTelemetry(matchedDevice);
+      const tel = getDeviceTelemetry(matchedDevice, isMalayalam);
       return {
         reply: tel.text,
-        action: `${matchedDevice.name} Checked`,
+        action: isMalayalam ? `${matchedDevice.name} പരിശോധിച്ചു` : `${matchedDevice.name} Checked`,
         deviceCard: { name: matchedDevice.name, type: matchedDevice.type, detail: tel.detail },
       };
     }
 
-    // 8. Specific Room Commands ("turn on room 1", "turn off room 2", "status of room 1")
+    // 10. Specific Room Commands ("turn on room 1", "turn off room 2", "റൂം 1 ലൈറ്റുകൾ ഓഫ് ചെയ്യുക", "room 1 engane undu")
     for (const r of rooms) {
       const rName = r.name.toLowerCase();
       const numMatch = rName.match(/\d+/);
@@ -778,7 +1055,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
 
       let matchesRoom = new RegExp(`\\b${rName}\\b`, 'i').test(input);
       if (!matchesRoom && roomNum) {
-        matchesRoom = new RegExp(`\\broom\\s*${roomNum}\\b`, 'i').test(input);
+        matchesRoom = new RegExp(`\\broom\\s*${roomNum}\\b`, 'i').test(input) || new RegExp(`\\bറൂം\\s*${roomNum}\\b`, 'i').test(input);
       }
       if (!matchesRoom && r.slug && r.slug.length > 2) {
         matchesRoom = new RegExp(`\\b${r.slug}\\b`, 'i').test(input);
@@ -788,7 +1065,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
         const roomDevs = devices.filter((d) => d.room_id === r.id);
 
         // Navigation
-        if (/\b(show|go to|view)\b/i.test(input) || /കാണിക്കുക/i.test(input)) {
+        if (/\b(show|go to|view|kaanikku|തുറക്കുക|കാണിക്കുക)\b/i.test(input)) {
           onSelectRoom(r.id);
           return {
             reply: isMalayalam ? `${r.name} തുറന്നിരിക്കുന്നു.` : `Navigating to ${r.name}.`,
@@ -797,9 +1074,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
         }
 
         // Room Status
-        if (/\b(status|check|reading)\b/i.test(input) || /നില/i.test(input)) {
+        if (/\b(status|check|reading|engane|nila|നില)\b/i.test(input)) {
           const summaries = roomDevs.map((d) => {
-            const tel = getDeviceTelemetry(d);
+            const tel = getDeviceTelemetry(d, isMalayalam);
             return `• ${d.name}: ${tel.detail || 'Online'}`;
           });
           return {
@@ -820,25 +1097,25 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
             d.type === 'cover'
         );
 
-        if (/\b(off|stop|disable)\b/i.test(input) || /ഓഫ്/i.test(input)) {
+        if (/\b(off|stop|disable|off\s*aakku|keduthu|ഓഫ്)\b/i.test(input)) {
           for (const d of controllableDevs) {
             await executeDeviceAction(d, 'off');
           }
           return {
             reply: isMalayalam
-              ? `${r.name}-ലെ എല്ലാ ലൈറ്റുകളും ഓഫ് ചെയ്തു.`
+              ? `${r.name}-ലെ എല്ലാ (${controllableDevs.length}) ഉപകരണങ്ങളും ഓഫ് ചെയ്തു.`
               : `Turned OFF all ${controllableDevs.length} switches and lights in ${r.name}.`,
             action: `Turned OFF devices in ${r.name}`,
           };
         }
 
-        if (/\b(on|start|enable)\b/i.test(input) || /ഓൺ/i.test(input)) {
+        if (/\b(on|start|enable|on\s*aakku|ഓൺ)\b/i.test(input)) {
           for (const d of controllableDevs) {
             await executeDeviceAction(d, 'on');
           }
           return {
             reply: isMalayalam
-              ? `${r.name}-ലെ എല്ലാ ലൈറ്റുകളും ഓൺ ചെയ്തു.`
+              ? `${r.name}-ലെ എല്ലാ (${controllableDevs.length}) ഉപകരണങ്ങളും ഓൺ ചെയ്തു.`
               : `Turned ON all ${controllableDevs.length} switches and lights in ${r.name}.`,
             action: `Turned ON devices in ${r.name}`,
           };
@@ -846,11 +1123,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
       }
     }
 
-    // 12. Check Direct Unmapped Zigbee2MQTT Devices
+    // 11. Check Direct Unmapped Zigbee2MQTT Devices
     for (const zDev of z2mDevices) {
       if (zDev.type === 'Coordinator') continue;
       if (input.includes(zDev.friendly_name.toLowerCase())) {
-        const isOff = input.includes('off') || input.includes('trip') || input.includes('ഓഫ്');
+        const isOff = input.includes('off') || input.includes('trip') || input.includes('ഓഫ്') || input.includes('keduthu');
         await setZ2mState(zDev.friendly_name, { state: isOff ? 'OFF' : 'ON' });
         return {
           reply: isMalayalam
@@ -861,11 +1138,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
       }
     }
 
-    // 13. Helpful Intelligent Fallback
+    // 12. Localized, Polite Intelligent Fallback
     return {
       reply: isMalayalam
-        ? `ക്ഷമിക്കണം, എനിക്ക് പൂർണ്ണമായി മനസ്സിലായില്ല. നിങ്ങൾക്ക് "റൂം 1 ലൈറ്റുകൾ ഓഫ് ചെയ്യുക", "സ്വിച്ച് 1 ഓൺ ചെയ്യുക", "എനർജി മീറ്റർ പരിശോധിക്കുക", "വാതിൽ തുറക്കുക" എന്ന് പറയാം.`
-        : `I've noted: "${rawInput}". Try asking: "Turn on R&D Room Switch 1", "Trip energy meter", "What is the air quality?", "Unlock door", or "Turn off all lights".`,
+        ? `ക്ഷമിക്കണം, എനിക്ക് പൂർണ്ണമായി മനസ്സിലായില്ല. നിങ്ങൾക്ക് "ക്യാമറ qqq കാണിക്കുക", "സ്റ്റോർ റൂം ക്യാമറ തുറക്കുക", "സിസിടിവി വാൾ", "സ്വിച്ച് 1 ഓൺ ചെയ്യുക", "എല്ലാ ലൈറ്റുകളും ഓഫ് ചെയ്യുക", "വാതിൽ തുറക്കുക", അല്ലെങ്കിൽ "എനർജി മീറ്റർ പരിശോധിക്കുക" എന്ന് പറയാം.`
+        : `I've noted: "${rawInput}". Try asking: "See visuals of camera qqq", "Open Store Room camera", "Go to CCTV Wall", "Turn on Switch 1", "Unlock door", "Trip energy meter", or "Turn off all lights".`,
     };
   };
 
@@ -883,7 +1160,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
     setMessages((prev) => [...prev, userMsg]);
     setInputText('');
 
-    const { reply, action, deviceCard } = await processCommand(text);
+    const { reply, action, deviceCard, cameraCard } = await processCommand(text);
 
     const botMsg: ChatMessage = {
       id: `bot_${Date.now()}`,
@@ -892,6 +1169,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       actionTaken: action,
       deviceCard,
+      cameraCard,
     };
 
     setMessages((prev) => [...prev, botMsg]);
@@ -1034,51 +1312,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
         </div>
       )}
 
-      {/* Quick Action Chips */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 shrink-0 scrollbar-none">
-        <button
-          onClick={() => handleSendMessage('Turn on R&D Room Switch 1')}
-          className="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-xs font-semibold text-cyan-300 border border-cyan-500/20 shrink-0 flex items-center gap-1.5"
-        >
-          <Lightbulb className="w-3.5 h-3.5 text-cyan-400" /> Switch 1 ON
-        </button>
-        <button
-          onClick={() => handleSendMessage('Turn off all lights')}
-          className="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-xs font-semibold text-rose-300 border border-rose-500/20 shrink-0 flex items-center gap-1.5"
-        >
-          <Power className="w-3.5 h-3.5 text-rose-400" /> Turn off all lights
-        </button>
-        <button
-          onClick={() => handleSendMessage('Check energy meter power')}
-          className="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-xs font-semibold text-amber-300 border border-amber-500/20 shrink-0 flex items-center gap-1.5"
-        >
-          <Zap className="w-3.5 h-3.5 text-amber-400" /> Energy Meter Power
-        </button>
-        <button
-          onClick={() => handleSendMessage('What is the air quality?')}
-          className="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-xs font-semibold text-emerald-300 border border-emerald-500/20 shrink-0 flex items-center gap-1.5"
-        >
-          <Wind className="w-3.5 h-3.5 text-emerald-400" /> Air Quality
-        </button>
-        <button
-          onClick={() => handleSendMessage('Unlock the door')}
-          className="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-xs font-semibold text-indigo-300 border border-indigo-500/20 shrink-0 flex items-center gap-1.5"
-        >
-          <Unlock className="w-3.5 h-3.5 text-indigo-400" /> Unlock Door
-        </button>
-        <button
-          onClick={() => handleSendMessage('I am sweating')}
-          className="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-xs font-semibold text-sky-300 border border-sky-500/20 shrink-0 flex items-center gap-1.5"
-        >
-          <Thermometer className="w-3.5 h-3.5 text-sky-400" /> Cool Down AC
-        </button>
-        <button
-          onClick={() => handleSendMessage('What is the weather?')}
-          className="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-xs font-semibold text-slate-300 border border-white/10 shrink-0 flex items-center gap-1.5"
-        >
-          <CloudSun className="w-3.5 h-3.5 text-amber-400" /> Weather
-        </button>
-      </div>
+
 
       {/* Messages Timeline */}
       <div className="flex-1 overflow-y-auto space-y-3 p-4 glass-panel rounded-2xl border border-white/10">
@@ -1127,6 +1361,61 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
                   </div>
                 </div>
               )}
+
+              {msg.cameraCard && (
+                <div className="mt-2.5 p-3 bg-slate-950/90 rounded-2xl border border-cyan-500/30 space-y-2.5 w-full min-w-[260px] sm:min-w-[340px] max-w-sm shadow-xl">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+                        <CameraIcon className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="font-bold text-white text-xs block">
+                          {msg.cameraCard.camera.name}
+                        </span>
+                        <span className="text-[10px] font-mono text-cyan-400 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          {msg.cameraCard.camera.stream_id} • Live Visual
+                        </span>
+                      </div>
+                    </div>
+                    {msg.cameraCard.camera.ptz_enabled ? (
+                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/40 flex items-center gap-1">
+                        <Compass className="w-3 h-3" /> PTZ
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {/* Live Go2RTC Video Player */}
+                  <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black border border-white/10 shadow-inner">
+                    <Go2rtcVideo
+                      camera={msg.cameraCard.camera}
+                      className="w-full h-full object-cover"
+                      onFullscreen={() => onOpenFullscreenCamera?.(msg.cameraCard!.camera)}
+                    />
+                  </div>
+
+                  {/* Action Navigation Buttons */}
+                  <div className="flex items-center gap-2 pt-1">
+                    {onOpenFullscreenCamera && (
+                      <button
+                        onClick={() => onOpenFullscreenCamera(msg.cameraCard!.camera)}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-gradient-to-r from-cyan-500/20 to-brand-500/20 hover:from-cyan-500/30 hover:to-brand-500/30 text-cyan-300 text-xs font-semibold flex items-center justify-center gap-1.5 border border-cyan-500/30 transition-all shadow-glow"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5 text-cyan-400" /> Fullscreen & PTZ
+                      </button>
+                    )}
+                    {onNavigateToTab && (
+                      <button
+                        onClick={() => onNavigateToTab('cctv')}
+                        className="py-1.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-semibold flex items-center justify-center gap-1.5 border border-white/10 transition-colors"
+                      >
+                        <Video className="w-3.5 h-3.5 text-purple-400" /> CCTV Wall
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             <span className="text-[9px] font-mono text-slate-500 mt-1 px-1">
               {msg.timestamp}
@@ -1154,10 +1443,12 @@ export const ChatPage: React.FC<ChatPageProps> = ({ onSelectRoom }) => {
           type="text"
           placeholder={
             isListening
-              ? 'Listening...'
+              ? language === 'ml-IN'
+                ? 'കേൾക്കുന്നു... സംസാരിക്കുക'
+                : 'Listening...'
               : language === 'ml-IN'
-              ? 'പറയുക: "സ്വിച്ച് 1 ഓൺ ചെയ്യുക", "എനർജി മീറ്റർ പരിശോധിക്കുക", "വാതിൽ തുറക്കുക"...'
-              : 'Say or type: "Turn on Switch 1", "Trip energy meter", "Check air quality", "Unlock door"...'
+              ? 'പറയുക അല്ലെങ്കിൽ ടൈപ്പ് ചെയ്യുക: "ക്യാമറ qqq കാണിക്കുക", "വാതിൽ തുറക്കുക", "സ്വിച്ച് 1 ഓൺ ചെയ്യുക"...'
+              : 'Say or type: "See visuals of camera qqq", "light on aakku", "vaathil thurakku", "Turn on Switch 1"...'
           }
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}

@@ -122,7 +122,14 @@ export const App: React.FC = () => {
             )}
 
             {currentTab === 'chat' && (
-              <ChatPage onSelectRoom={(roomId) => setSelectedRoomId(roomId)} />
+              <ChatPage
+                onSelectRoom={(roomId) => setSelectedRoomId(roomId)}
+                onNavigateToTab={(tab) => {
+                  setSelectedRoomId(null);
+                  setCurrentTab(tab);
+                }}
+                onOpenFullscreenCamera={(cam) => setFullscreenCamera(cam)}
+              />
             )}
 
             {currentTab === 'locks' && <LockTestingPage />}

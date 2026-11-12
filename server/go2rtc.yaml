@@ -9,22 +9,32 @@ webrtc:
     - stun:8555
 streams:
   cam1:
-    - rtsp://192.168.0.39:8554/tapo_main#tcp#backchannel=0
+    - rtsp://bezlin:%23Kinhah3059@192.168.0.176:554/stream1#tcp#backchannel=0
+  cam1F:
+    - cam1
   cam2:
     - rtsp://192.168.0.38:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel1#tcp#backchannel=0
   cam2F:
-    - rtsp://192.168.0.38:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel0#tcp#backchannel=0
+    - cam2
   cam3:
     - rtsp://192.168.0.198:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel1#tcp#backchannel=0
   cam3F:
-    - rtsp://192.168.0.198:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel0#tcp#backchannel=0
+    - cam3
   cam4:
     - rtsp://192.168.0.159:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel1#tcp#backchannel=0
   cam4F:
-    - rtsp://192.168.0.159:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel0#tcp#backchannel=0
+    - cam4
   cam5:
-    - rtsp://admin:brvksn@192.168.0.118:8000:554/Streaming/Channels/102#tcp#backchannel=0
+    - rtsp://admin:brvksn@127.0.0.1:5555/Streaming/Channels/102
+  cam5F:
+    - cam5
   cam6:
     - rtsp://192.168.0.154:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel1#tcp#backchannel=0
   cam6F:
-    - rtsp://192.168.0.154:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel0#tcp#backchannel=0
+    - cam6
+  ? rtsps://echo:2JQ7fM9NF4AynO8jD3HBXMJqosxWwpsW@wework-10-ind.stream.iot-11.com:443/v1/d7c1f02594322e7d0dyyoy/dbqoq3q7nf6bdtik9p00yIkqm5vasJ77?signInfo=Go1ootR5vbhIsABEOoGv8uvqgu4MSfBy6rxIC3u2LnqxehBSiTsfr5YunJ0aRTo1V8SWxBhXCrfs5G9Fe2L-jj_niFUEJZ2gQECOoX31kluFETlB3nuSBA96otIlhypkaEjQCkFvmJOVYkGR6X2AetVAmBmlEvq86g7Q8nC9JYo
+  : - rtsps://echo:2JQ7fM9NF4AynO8jD3HBXMJqosxWwpsW@wework-10-ind.stream.iot-11.com:443/v1/d7c1f02594322e7d0dyyoy/dbqoq3q7nf6bdtik9p00yIkqm5vasJ77?signInfo=Go1ootR5vbhIsABEOoGv8uvqgu4MSfBy6rxIC3u2LnqxehBSiTsfr5YunJ0aRTo1V8SWxBhXCrfs5G9Fe2L-jj_niFUEJZ2gQECOoX31kluFETlB3nuSBA96otIlhypkaEjQCkFvmJOVYkGR6X2AetVAmBmlEvq86g7Q8nC9JYo
+  tuya_doorlock:
+    - rtsps://echo:5PycxwPCdLWpJjHmADUSPJjxoYNjzSPJ@wework-6-ind.stream.iot-11.com:443/v1/d7c1f02594322e7d0dyyoy/dbqot2etkbg1gj9batog5OBR2Wq8CvjM?signInfo=OEV1dRk4hQa8kRa_f71xMvdXODmmGw8kK9ETyQN3vK-Ksg_fVSPxcYTsDt7fHwECb4WQOVmU0iMUmZSZuJeNLpgdo67TRGlwAca3-qP6K21s56CY6iu0BLI_61xpfSOnIBn-AqPhl19ukTZBeMUb_ngw8BvBgVMfJOdYP9ullQo
+  tuya_doorlock_0dyyoy:
+    - rtsps://echo:o6RokPAopJsdKiKmTPcWwQuI8Sxvfei5@wework-7-ind.stream.iot-11.com:443/v1/d7c1f02594322e7d0dyyoy/dbqqhm0tf179mnu29f10H3NjJMniFh64?signInfo=5GNXbXaI-DXGAcZlgLmQZpado-ionJPnX9QbeMrTcfsws1QWs8dWYBUmCqVeRFIb7CGGGdE89p2JAhXqaSu1WxSMrn4isiF3IuuDeVYT7QYREmsZlOtHHoYfR9yegPLMw-X8w9QcAAc-r4TuLGGU3Are90yZV6Ey6A273Po3vQc

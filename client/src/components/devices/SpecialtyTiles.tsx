@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import {
   Radio,
   Lock,
@@ -17,12 +17,16 @@ import {
   RotateCw,
   Power,
   ShieldCheck,
+  Settings,
 } from 'lucide-react';
 import type { Device } from '../../types';
 import { useEntity } from '../../context/MultiHubHomeAssistantProvider';
 import { useAuth } from '../../context/AuthContext';
 import { useBootstrap } from '../../context/BootstrapContext';
 import { ApiService } from '../../services/api';
+
+const LockDetailModal = lazy(() => import('./LockDetailModal'));
+
 
 export const PresenceSensorTile: React.FC<{ device: Device }> = ({ device }) => {
   const { state, attributes } = useEntity(device.entity_id, device.ha_hub_id);
@@ -110,23 +114,52 @@ export const TtlockTile: React.FC<{ device: Device }> = ({ device }) => {
   const [unlocked, setUnlocked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [battery, setBattery] = useState<number | null>(null);
 
   let devConfig: any = {};
   try { devConfig = JSON.parse(device.config_json); } catch (_) {}
+
+  // Detect if this is a Tuya video lock
+  const tuyaId: string | null = device.tuya_device_id || devConfig.tuya_device_id || null;
+  const isTuya = Boolean(tuyaId);
   const lockId = devConfig.lockId || device.entity_id;
 
+  // Fetch live Tuya lock status on mount
+  React.useEffect(() => {
+    if (!isTuya || !tuyaId) return;
+    ApiService.getTuyaLockStatus(tuyaId).then(res => {
+      if (res.ok) {
+        if (res.battery !== undefined) setBattery(res.battery);
+        setUnlocked(!res.locked);
+      }
+    }).catch(() => {});
+  }, [isTuya, tuyaId]);
+
   const handleUnlock = async () => {
-    if (!lockId || loading) return;
+    if (loading) return;
     setLoading(true);
     setMsg(null);
     try {
-      const res = await ApiService.unlockTtlock(lockId);
-      if (res.ok) {
-        setUnlocked(true);
-        setMsg('Unlocked');
-        setTimeout(() => setUnlocked(false), 5000);
+      if (isTuya && tuyaId) {
+        const res = await ApiService.unlockTuyaDevice(tuyaId);
+        if (res.ok) {
+          setUnlocked(true);
+          setMsg(res.message || 'Door Locked & Secured (Outside handle is disengaged).');
+          setTimeout(() => { setUnlocked(false); setMsg(null); }, 8000);
+        } else {
+          setMsg(res.message || 'Failed');
+        }
       } else {
-        setMsg(res.message || 'Failed');
+        if (!lockId) return;
+        const res = await ApiService.unlockTtlock(lockId);
+        if (res.ok) {
+          setUnlocked(true);
+          setMsg('Unlocked');
+          setTimeout(() => setUnlocked(false), 5000);
+        } else {
+          setMsg(res.message || 'Failed');
+        }
       }
     } catch (err: any) {
       setMsg(err.message || 'Error');
@@ -135,49 +168,73 @@ export const TtlockTile: React.FC<{ device: Device }> = ({ device }) => {
     }
   };
 
+  const battDisp = battery !== null ? battery : 95;
+
   return (
-    <div className={`relative rounded-2xl p-4 transition-all tile-hover border ${
-      unlocked ? 'glass-panel-glow border-emerald-500/40 shadow-glow-emerald' : 'glass-panel border-white/10'
-    }`}>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${
-            unlocked ? 'bg-emerald-500 text-slate-950 shadow-glow-emerald' : 'bg-slate-800 text-cyan-400'
-          }`}>
-            {unlocked ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
-          </div>
-          <div>
-            <h4 className="text-sm font-semibold text-white tracking-wide">{device.name}</h4>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className={`text-[10px] font-mono uppercase font-bold tracking-wider ${unlocked ? 'text-emerald-400' : 'text-slate-400'}`}>
-                {unlocked ? 'ACCESS GRANTED' : 'SECURED'}
-              </span>
-              {msg && <span className="text-[10px] text-cyan-300">({msg})</span>}
+    <>
+      <div className={`relative rounded-2xl p-4 transition-all tile-hover border ${
+        unlocked ? 'glass-panel-glow border-emerald-500/40 shadow-glow-emerald' : 'glass-panel border-white/10'
+      }`}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${
+              unlocked ? 'bg-emerald-500 text-slate-950 shadow-glow-emerald' : 'bg-slate-800 text-cyan-400'
+            }`}>
+              {unlocked ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+            </div>
+            <div>
+              <h4 className="text-sm font-semibold text-white tracking-wide">{device.name}</h4>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className={`text-[10px] font-mono uppercase font-bold tracking-wider ${unlocked ? 'text-emerald-400' : 'text-cyan-400'}`}>
+                  {unlocked ? 'ACCESS GRANTED' : 'SECURED'}
+                </span>
+                {msg && <span className="text-[10px] text-cyan-300">({msg})</span>}
+              </div>
             </div>
           </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 text-slate-400 text-xs font-mono">
+              <Battery className="w-3.5 h-3.5 text-emerald-400" /> {battDisp}%
+            </div>
+            {isTuya && (
+              <button
+                onClick={() => setShowModal(true)}
+                className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-cyan-400 transition-colors"
+                title="Open Lock Controls"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-1 text-slate-400 text-xs font-mono">
-          <Battery className="w-3.5 h-3.5 text-emerald-400" /> 95%
-        </div>
+        <button
+          onClick={handleUnlock}
+          disabled={loading}
+          className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-brand-600 hover:from-cyan-500 hover:to-brand-500 active:scale-95 text-white text-xs font-bold tracking-wider shadow-glow transition-all flex items-center justify-center gap-2"
+        >
+          {loading ? (
+            <span className="animate-spin text-white">⟳ Unlocking...</span>
+          ) : (
+            <><Unlock className="w-4 h-4" /> 1-Click Remote Unlock</>
+          )}
+        </button>
       </div>
 
-      <button
-        onClick={handleUnlock}
-        disabled={loading}
-        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-brand-600 hover:from-cyan-500 hover:to-brand-500 active:scale-95 text-white text-xs font-bold tracking-wider shadow-glow transition-all flex items-center justify-center gap-2"
-      >
-        {loading ? (
-          <span className="animate-spin text-white">⟳ Unlocking...</span>
-        ) : (
-          <>
-            <Unlock className="w-4 h-4" /> 1-Click Remote Unlock
-          </>
-        )}
-      </button>
-    </div>
+      {showModal && isTuya && tuyaId && (
+        <Suspense fallback={null}>
+          <LockDetailModal
+            device={device}
+            tuyaDeviceId={tuyaId}
+            onClose={() => setShowModal(false)}
+          />
+        </Suspense>
+      )}
+    </>
   );
 };
+
 
 export const EnvironmentalSensorTile: React.FC<{ device: Device }> = ({ device }) => {
   const { getZ2mState } = useBootstrap();

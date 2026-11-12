@@ -155,7 +155,11 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
       config.down_entity_id = downEntityId;
       config.travel_ms = travelMs;
     } else if (deviceType === 'ttlock') {
-      config.lockId = lockId || selectedEntityId;
+      config.lockId = lockId || tuyaDeviceId || selectedEntityId;
+      if (tuyaDeviceId) {
+        config.tuya_device_id = tuyaDeviceId;
+        config.isTuyaLock = true;
+      }
     }
 
     await onSave({
@@ -244,7 +248,7 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
                 <option value="cover" className="bg-slate-900">Native Cover Blinds</option>
                 <option value="presence_sensor" className="bg-slate-900">Presence / Occupancy Sensor</option>
                 <option value="exhaust_fan" className="bg-slate-900">Exhaust / Ventilation Fan</option>
-                <option value="ttlock" className="bg-slate-900">TTLock Smart Lock</option>
+                <option value="ttlock" className="bg-slate-900">Smart Door Lock (TTLock / Tuya Wi-Fi)</option>
               </select>
             </div>
           </div>
@@ -533,15 +537,27 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
           )}
 
           {deviceType === 'ttlock' && (
-            <div className="bg-slate-900/60 p-3 rounded-xl border border-white/5">
-              <label className="block text-xs font-semibold text-slate-300 mb-1">TTLock Lock ID</label>
+            <div className="bg-slate-900/60 p-3 rounded-xl border border-white/5 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-slate-300">
+                  {tuyaDeviceId ? 'Tuya / Smart Life Lock ID' : 'TTLock Lock ID'}
+                </label>
+                <span className="text-[10px] text-cyan-400 font-mono">
+                  {tuyaDeviceId ? 'Direct Wi-Fi / Cloud' : 'Cloud / G2 Gateway'}
+                </span>
+              </div>
               <input
                 type="text"
-                placeholder="e.g. 1294821"
-                value={lockId}
+                placeholder={tuyaDeviceId ? "e.g. d7c1f02594322e7d0dyyoy" : "e.g. 1294821"}
+                value={lockId || tuyaDeviceId}
                 onChange={(e) => setLockId(e.target.value)}
                 className="w-full glass-input rounded-xl px-3 py-1.5 text-xs text-white font-mono"
               />
+              <p className="text-[10px] text-slate-400">
+                {tuyaDeviceId
+                  ? 'This lock is directly integrated with Tuya / Smart Life Cloud OpenAPI.'
+                  : 'Enter the numeric Lock ID synced from TTLock Open API (e.g. 25100936).'}
+              </p>
             </div>
           )}
 

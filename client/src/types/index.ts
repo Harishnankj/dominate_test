@@ -98,6 +98,7 @@ export type DeviceType =
   | 'presence_sensor'
   | 'exhaust_fan'
   | 'ttlock'
+  | 'lock'
   | 'media_player'
   | 'environmental_sensor'
   | 'energy_meter'

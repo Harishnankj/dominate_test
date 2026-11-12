@@ -77,7 +77,7 @@ export class ApiService {
     return this.request(`/api/admin/ha-import-areas/${hubId}`, { method: 'POST' });
   }
 
-  static async addHub(hub: { name: string; local_url: string; cloud_url?: string; access_token: string }): Promise<{ ok: boolean; id: string }> {
+  static async addHub(hub: { name: string; local_url: string; cloud_url?: string; access_token: string; enabled?: number }): Promise<{ ok: boolean; id: string }> {
     return this.request('/api/admin/hubs', {
       method: 'POST',
       body: JSON.stringify(hub),
@@ -139,16 +139,77 @@ export class ApiService {
     return this.request(`/api/admin/devices/${id}`, { method: 'DELETE' });
   }
 
-  // Cameras & Go2RTC
-  static async fetchGo2rtcStreams(): Promise<{ ok: boolean; streams: Record<string, any> }> {
-    return this.request('/api/admin/go2rtc/streams');
+  static async setVirtualDeviceState(deviceId: string, state: Record<string, any>): Promise<{ ok: boolean }> {
+    return this.request(`/api/devices/${deviceId}/virtual-state`, {
+      method: 'POST',
+      body: JSON.stringify({ state }),
+    });
   }
 
-  static async addCamera(camera: Partial<Camera>): Promise<{ ok: boolean; id: string }> {
+  static async sendAcIrCommand(deviceId: string, commandKey: string, stateSnapshot?: any): Promise<{ ok: boolean }> {
+    return this.request('/api/devices/ac-ir/send', {
+      method: 'POST',
+      body: JSON.stringify({ deviceId, commandKey, stateSnapshot }),
+    });
+  }
+
+  static async sendBlindsRelayCommand(deviceId: string, action: 'open' | 'close' | 'stop'): Promise<{ ok: boolean; action: string }> {
+    return this.request('/api/devices/blinds-relay/command', {
+      method: 'POST',
+      body: JSON.stringify({ deviceId, action }),
+    });
+  }
+
+  static async callHaService(domain: string, service: string, service_data?: any, hub_id?: string): Promise<{ ok: boolean; result: any }> {
+    return this.request('/api/devices/ha-call', {
+      method: 'POST',
+      body: JSON.stringify({ domain, service, service_data, hub_id }),
+    });
+  }
+
+
+
+  // Global Building Lock Control
+  static async lockAllDoors(): Promise<{ ok: boolean; total: number; locked: number; results: any[] }> {
+    return this.request('/api/devices/lock-all', { method: 'POST' });
+  }
+
+  static async unlockTuyaDevice(deviceId: string): Promise<{ ok: boolean; message: string }> {
+    return this.request('/api/tuya/unlock', {
+      method: 'POST',
+      body: JSON.stringify({ device_id: deviceId }),
+    });
+  }
+
+  static async lockTuyaDevice(deviceId: string): Promise<{ ok: boolean; message: string }> {
+    return this.request('/api/tuya/lock', {
+      method: 'POST',
+      body: JSON.stringify({ device_id: deviceId }),
+    });
+  }
+
+  static async getTuyaLockStatus(deviceId: string): Promise<{ ok: boolean; battery?: number; locked?: boolean; online?: boolean; rawStatus?: Record<string, any>; message?: string }> {
+    return this.request(`/api/tuya/devices/${deviceId}/status`);
+  }
+
+  static async generateTuyaOtp(deviceId: string): Promise<{ ok: boolean; otp?: string; expiresIn?: number; message?: string }> {
+    return this.request(`/api/tuya/devices/${deviceId}/dynamic-password`, { method: 'POST' });
+  }
+
+  static async getTuyaLockLogs(deviceId: string): Promise<{ ok: boolean; logs?: any[]; message?: string }> {
+    return this.request(`/api/tuya/devices/${deviceId}/logs`);
+  }
+
+  static async getTuyaLiveStream(deviceId: string): Promise<{ ok: boolean; stream_id?: string; rtsp_url?: string; hls_url?: string; message?: string }> {
+    return this.request(`/api/tuya/devices/${deviceId}/stream`, { method: 'POST' });
+  }
+
+  // Cameras
+  static async addCamera(camera: any): Promise<{ ok: boolean; id: string }> {
     return this.request('/api/admin/cameras', { method: 'POST', body: JSON.stringify(camera) });
   }
 
-  static async updateCamera(id: string, camera: Partial<Camera>): Promise<{ ok: boolean }> {
+  static async updateCamera(id: string, camera: any): Promise<{ ok: boolean }> {
     return this.request(`/api/admin/cameras/${id}`, { method: 'PUT', body: JSON.stringify(camera) });
   }
 
@@ -156,30 +217,49 @@ export class ApiService {
     return this.request(`/api/admin/cameras/${id}`, { method: 'DELETE' });
   }
 
-  static async ptzCamera(
-    id: string,
-    params: { action?: 'move' | 'stop'; direction?: string; speed?: number; durationMs?: number }
-  ): Promise<{ ok: boolean; direction?: string; speed?: number; error?: string }> {
-    return this.request(`/api/cameras/${id}/ptz`, {
+  static async testOnvifPtz(data: { ip: string; port?: number; username?: string; password?: string }): Promise<{ ok: boolean; supported: boolean; message: string }> {
+    return this.request('/api/admin/ptz-test', {
       method: 'POST',
-      body: JSON.stringify(params),
+      body: JSON.stringify(data),
     });
   }
 
-  static async probeOnvif(): Promise<{ ok: boolean; count: number; devices: Array<{ name: string; xaddr: string; scopes?: string[] }> }> {
-    return this.request('/api/admin/cameras/probe-onvif', { method: 'POST' });
+  static async controlOnvifPtz(cameraId: string, action: 'move' | 'stop', x: number = 0, y: number = 0, zoom: number = 0): Promise<{ ok: boolean }> {
+    return this.request(`/api/admin/cameras/${cameraId}/ptz`, {
+      method: 'POST',
+      body: JSON.stringify({ action, x, y, zoom }),
+    });
+  }
+
+  static async probeOnvif(data?: { ip?: string; port?: number; username?: string; password?: string }): Promise<{ ok: boolean; devices: any[]; error?: string }> {
+    return this.request('/api/admin/cameras/probe-onvif', {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  }
+
+  static async ptzCamera(
+    cameraId: string,
+    params: { direction?: string; action?: 'move' | 'stop'; speed?: number; durationMs?: number } | ('move' | 'stop'),
+    x: number = 0,
+    y: number = 0,
+    zoom: number = 0
+  ): Promise<{ ok: boolean }> {
+    if (typeof params === 'object') {
+      return this.request(`/api/admin/cameras/${cameraId}/ptz`, {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+    }
+    return this.controlOnvifPtz(cameraId, params, x, y, zoom);
   }
 
   // IR Profiles
-  static async fetchIrProfiles(): Promise<{ ok: boolean; profiles: IrProfile[] }> {
-    return this.request('/api/admin/ir-profiles');
-  }
-
-  static async addIrProfile(profile: { name: string; brand?: string; commands: Record<string, string> }): Promise<{ ok: boolean; id: string }> {
+  static async addIrProfile(profile: any): Promise<{ ok: boolean; id: string }> {
     return this.request('/api/admin/ir-profiles', { method: 'POST', body: JSON.stringify(profile) });
   }
 
-  static async updateIrProfile(id: string, profile: { name?: string; brand?: string; commands?: Record<string, string> }): Promise<{ ok: boolean }> {
+  static async updateIrProfile(id: string, profile: any): Promise<{ ok: boolean }> {
     return this.request(`/api/admin/ir-profiles/${id}`, { method: 'PUT', body: JSON.stringify(profile) });
   }
 
@@ -187,62 +267,97 @@ export class ApiService {
     return this.request(`/api/admin/ir-profiles/${id}`, { method: 'DELETE' });
   }
 
-  static async testIrCode(data: { hub_id?: string; entity_id: string; code: string }): Promise<any> {
-    return this.request('/api/admin/ir-test', { method: 'POST', body: JSON.stringify(data) });
+  static async testIrCode(data: { hub_id?: string; entity_id: string; code: string }): Promise<{ ok: boolean }> {
+    return this.request('/api/admin/ir-test', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
-  static async learnIrCode(data: { hub_id?: string; learn_entity: string; sensor_entity: string }): Promise<{ ok: boolean; code?: string; message: string }> {
-    return this.request('/api/admin/ir-learn', { method: 'POST', body: JSON.stringify(data) });
+  static async learnIrCode(data: { hub_id?: string; learn_entity: string; sensor_entity: string }): Promise<{ ok: boolean; code?: string; message?: string }> {
+    return this.request('/api/admin/ir-learn', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   // TTLock
-  static async testTtlock(credentials: any): Promise<any> {
-    return this.request('/api/admin/ttlock-test', { method: 'POST', body: JSON.stringify(credentials) });
+  static async testTtlock(credentials: {
+    client_id: string;
+    client_secret: string;
+    username: string;
+    password?: string;
+  }): Promise<{ ok: boolean; totalLocks: number; locks: any[]; error?: string }> {
+    return this.request('/api/admin/ttlock-test', {
+      method: 'POST',
+      body: JSON.stringify(credentials),
+    });
   }
 
-  static async unlockTtlock(lockId: string | number): Promise<any> {
-    return this.request('/api/admin/ttlock-unlock', { method: 'POST', body: JSON.stringify({ lock_id: lockId }) });
+  static async unlockTtlock(lockId: string | number): Promise<{ ok: boolean; message: string }> {
+    return this.request('/api/admin/ttlock-unlock', {
+      method: 'POST',
+      body: JSON.stringify({ lock_id: lockId }),
+    });
   }
 
-  // Config Update, Export, Import
-  static async updateConfig(config: Partial<BuildingConfig>): Promise<{ ok: boolean }> {
-    return this.request('/api/admin/config', { method: 'POST', body: JSON.stringify(config) });
+  static async lockTtlock(lockId: string | number): Promise<{ ok: boolean; message: string }> {
+    return this.request('/api/admin/ttlock-lock', {
+      method: 'POST',
+      body: JSON.stringify({ lock_id: lockId }),
+    });
+  }
+
+  static async generateTtlockPasscode(lockId: string | number, type: number = 1): Promise<{
+    ok: boolean;
+    passcode?: string;
+    message: string;
+  }> {
+    return this.request('/api/admin/ttlock-passcode', {
+      method: 'POST',
+      body: JSON.stringify({ lock_id: lockId, type }),
+    });
+  }
+
+  static async getTtlockRecords(lockId: string | number): Promise<{
+    ok: boolean;
+    records: Array<{ id: string; timestamp: number; unlockMethod: string; user?: string; status: string }>;
+  }> {
+    return this.request(`/api/admin/ttlock-records/${lockId}`);
+  }
+
+  static async getTtlockDetail(lockId: string | number): Promise<{
+    ok: boolean;
+    electricQuantity?: number;
+    detail?: any;
+  }> {
+    return this.request(`/api/admin/ttlock-detail/${lockId}`);
+  }
+
+  // Building Config & Backup
+  static async updateConfig(fields: Partial<BuildingConfig>): Promise<{ ok: boolean }> {
+    return this.request('/api/admin/config', { method: 'POST', body: JSON.stringify(fields) });
+  }
+
+  static async exportBackup(): Promise<any> {
+    return this.request('/api/admin/backup/export');
+  }
+
+  static async importBackup(data: any): Promise<{ ok: boolean }> {
+    return this.request('/api/admin/backup/import', { method: 'POST', body: JSON.stringify(data) });
   }
 
   static async exportConfig(): Promise<any> {
-    return this.request('/api/admin/export');
+    return this.exportBackup();
   }
 
-  static async importConfig(payload: any): Promise<{ ok: boolean; message: string }> {
-    return this.request('/api/admin/import', { method: 'POST', body: JSON.stringify(payload) });
+  static async importConfig(data: any): Promise<{ ok: boolean }> {
+    return this.importBackup(data);
   }
 
-  // Device Actions
-  static async sendAcIr(deviceId: string, commandKey: string, stateSnapshot?: any): Promise<any> {
-    return this.request('/api/devices/ac-ir/send', {
-      method: 'POST',
-      body: JSON.stringify({ deviceId, commandKey, stateSnapshot }),
-    });
-  }
-
-  static async moveRelayBlinds(deviceId: string, action: 'open' | 'close' | 'stop'): Promise<any> {
-    return this.request('/api/devices/relay-blinds/move', {
-      method: 'POST',
-      body: JSON.stringify({ deviceId, action }),
-    });
-  }
-
-  static async setVirtualState(deviceId: string, state: any): Promise<any> {
-    return this.request(`/api/devices/${deviceId}/virtual-state`, {
-      method: 'POST',
-      body: JSON.stringify({ state }),
-    });
-  }
-
-  // Misc
-  static async fetchWeather(lat?: number, lon?: number): Promise<any> {
-    const q = lat && lon ? `?lat=${lat}&lon=${lon}` : '';
-    return this.request(`/api/weather${q}`);
+  // Weather & News
+  static async fetchWeather(): Promise<any> {
+    return this.request('/api/weather');
   }
 
   static async fetchNews(): Promise<any> {
@@ -357,6 +472,7 @@ export class ApiService {
     });
   }
 
+
   static async updateTuyaConfig(data: {
     enabled: boolean;
     accessId: string;
@@ -388,6 +504,28 @@ export class ApiService {
     return this.request('/api/tuya/devices/manual', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  // Virtual States, AC IR & Relay Blinds
+  static async setVirtualState(deviceId: string, state: Record<string, any>): Promise<{ ok: boolean }> {
+    return this.request(`/api/devices/${deviceId}/virtual-state`, {
+      method: 'POST',
+      body: JSON.stringify({ state }),
+    });
+  }
+
+  static async sendAcIr(deviceId: string, commandKey: string, stateSnapshot?: any): Promise<{ ok: boolean }> {
+    return this.request('/api/devices/ac-ir/send', {
+      method: 'POST',
+      body: JSON.stringify({ deviceId, commandKey, stateSnapshot }),
+    });
+  }
+
+  static async moveRelayBlinds(deviceId: string, action: 'open' | 'close' | 'stop'): Promise<{ ok: boolean }> {
+    return this.request('/api/devices/relay-blinds/move', {
+      method: 'POST',
+      body: JSON.stringify({ deviceId, action }),
     });
   }
 }

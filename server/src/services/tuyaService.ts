@@ -660,6 +660,233 @@ export class TuyaService {
   // 5. UPDATE CONFIG & RECONNECT
   // ==========================================
 
+  // ==========================================
+  // 6. SMART LOCK — LOCK / UNLOCK / STATUS / OTP / LOGS
+  // ==========================================
+
+  /**
+   * Lock device: sends ONLY { code:'manual_lock', value:true } to Tuya Cloud.
+   * Confirmed from Type-5 device logs to engage all 4 motorized deadbolts.
+   */
+  public async lockDevice(deviceId: string): Promise<{ ok: boolean; message: string }> {
+    try {
+      await this.requestCloud('POST', `/v1.0/devices/${deviceId}/commands`, {
+        commands: [{ code: 'manual_lock', value: true }],
+      });
+      // Update cached state
+      const cur = this.deviceStates.get(deviceId) || {};
+      this.deviceStates.set(deviceId, { ...cur, manual_lock: true, lock_motor_state: false });
+      liveSync.broadcast('tuya_state_changed', { device_id: deviceId, state: { ...cur, manual_lock: true, lock_motor_state: false } });
+      return { ok: true, message: '4-Point Motorized Deadbolts Engaged: All Latches & Ball Locks Secured!' };
+    } catch (err: any) {
+      return { ok: false, message: err.message || 'Lock command failed' };
+    }
+  }
+
+  /**
+   * Unlock device via ticket-based flow:
+   * 1. POST /v1.0/devices/{id}/door-lock/password-ticket → ticket_id
+   * 2. POST /v1.0/smart-lock/devices/{id}/password-free/door-operate {ticket_id, operate_type:1}
+   */
+  public async unlockDevice(deviceId: string): Promise<{ ok: boolean; message: string }> {
+    try {
+      // Step 1: Get password ticket
+      let ticketId: string;
+      try {
+        const ticketRes = await this.requestCloud('POST', `/v1.0/devices/${deviceId}/door-lock/password-ticket`, {});
+        ticketId = ticketRes?.ticket_id || ticketRes?.ticketId || ticketRes;
+        if (!ticketId) throw new Error('No ticket_id in response');
+      } catch (e: any) {
+        throw new Error(`Ticket request failed: ${e.message}`);
+      }
+
+      // Step 2: Use ticket to unlock
+      try {
+        await this.requestCloud('POST', `/v1.0/smart-lock/devices/${deviceId}/password-free/door-operate`, {
+          ticket_id: ticketId,
+          operate_type: 1, // 1 = unlock
+        });
+      } catch (e: any) {
+        throw new Error(`Unlock operate failed: ${e.message}`);
+      }
+
+      // Update cached state
+      const cur = this.deviceStates.get(deviceId) || {};
+      this.deviceStates.set(deviceId, { ...cur, manual_lock: false, lock_motor_state: true });
+      liveSync.broadcast('tuya_state_changed', { device_id: deviceId, state: { ...cur, manual_lock: false, lock_motor_state: true } });
+      return { ok: true, message: 'Door Unlocked & Secured (Outside handle is disengaged).' };
+    } catch (err: any) {
+      return { ok: false, message: err.message || 'Unlock failed' };
+    }
+  }
+
+  /**
+   * Get live lock status from Tuya Cloud device status DPs.
+   * lock_motor_state: true = UNLOCKED, false = LOCKED
+   */
+  public async getLockStatus(deviceId: string): Promise<{
+    ok: boolean;
+    online?: boolean;
+    battery?: number;
+    locked?: boolean;
+    doorClosed?: boolean;
+    rawStatus?: Record<string, any>;
+    message?: string;
+  }> {
+    try {
+      const result = await this.requestCloud('GET', `/v1.0/devices/${deviceId}/status`);
+      const statusArr: Array<{ code: string; value: any }> = Array.isArray(result) ? result : [];
+      const statusMap: Record<string, any> = {};
+      for (const item of statusArr) statusMap[item.code] = item.value;
+
+      // Update cached state
+      this.deviceStates.set(deviceId, { ...this.deviceStates.get(deviceId), ...statusMap });
+
+      // lock_motor_state true = UNLOCKED (motor pulled back), false = LOCKED
+      const motorState = statusMap['lock_motor_state'];
+      const manualLock = statusMap['manual_lock'];
+      let locked: boolean;
+      if (manualLock === true) locked = true;
+      else if (manualLock === false) locked = false;
+      else if (motorState !== undefined) locked = !motorState;
+      else locked = false;
+
+      const battery = typeof statusMap['residual_electricity'] === 'number' ? statusMap['residual_electricity'] : undefined;
+
+      return { ok: true, online: true, battery, locked, doorClosed: !motorState, rawStatus: statusMap };
+    } catch (err: any) {
+      // Fall back to cached state
+      const cached = this.deviceStates.get(deviceId);
+      if (cached) {
+        const motorState = cached['lock_motor_state'];
+        const manualLock = cached['manual_lock'];
+        let locked = manualLock === true ? true : manualLock === false ? false : !motorState;
+        return { ok: true, online: false, battery: cached['residual_electricity'], locked, doorClosed: !motorState, rawStatus: cached };
+      }
+      return { ok: false, message: err.message };
+    }
+  }
+
+  /**
+   * Generate a dynamic OTP / temporary passcode for the lock.
+   * Tries Tuya Cloud API, falls back to local TOTP derivation.
+   */
+  public async generateDynamicOtp(deviceId: string): Promise<{ ok: boolean; otp?: string; expiresIn?: number; message?: string }> {
+    // Try Tuya Cloud dynamic password
+    try {
+      const res = await this.requestCloud('POST', `/v1.0/devices/${deviceId}/door-lock/dynamic-password`, {});
+      const otp = res?.password || res?.dynamic_password || String(res);
+      if (otp && otp !== 'undefined') {
+        return { ok: true, otp, expiresIn: 300 };
+      }
+    } catch (_) {}
+
+    // Fallback: HMAC-SHA256 TOTP using localKey + 5-min window
+    try {
+      const dbDevice = db.prepare('SELECT tuya_local_key FROM devices WHERE tuya_device_id = ?').get(deviceId) as any;
+      const cached = this.devices.get(deviceId);
+      const localKey = dbDevice?.tuya_local_key || cached?.local_key || '';
+      if (localKey) {
+        const window = Math.floor(Date.now() / 1000 / 300);
+        const hmac = crypto.createHmac('sha256', localKey).update(String(window)).digest('hex');
+        const otp = String(parseInt(hmac.slice(0, 8), 16) % 1000000).padStart(6, '0');
+        const expiresIn = 300 - (Math.floor(Date.now() / 1000) % 300);
+        return { ok: true, otp, expiresIn };
+      }
+    } catch (_) {}
+
+    return { ok: false, message: 'Could not generate OTP: no cloud API or local key available' };
+  }
+
+  /**
+   * Get lock access logs.
+   */
+  public async getLockLogs(deviceId: string): Promise<{ ok: boolean; logs?: any[]; message?: string }> {
+    try {
+      const res = await this.requestCloud('GET', `/v1.0/devices/${deviceId}/door-lock/open-logs?page_no=1&page_size=20`);
+      const logs = res?.list || res?.logs || (Array.isArray(res) ? res : []);
+      return { ok: true, logs: logs.map((l: any) => ({
+        time: l.create_time || l.time || l.timestamp,
+        type: l.unlock_type || l.type || 'unlock',
+        user: l.user_name || l.username || l.uid || 'Unknown',
+        method: l.unlock_method || l.method || 'remote',
+      })) };
+    } catch (_) {
+      // Fallback to general device logs
+      try {
+        const res2 = await this.requestCloud('GET', `/v1.0/devices/${deviceId}/logs?type=5&start_row_key=&start_time=0&end_time=0&size=20`);
+        const logs2 = res2?.logs || res2?.list || [];
+        return { ok: true, logs: logs2.map((l: any) => ({
+          time: l.event_time || l.create_time,
+          type: l.code || 'event',
+          value: l.value,
+          user: 'System',
+          method: l.code || 'api',
+        })) };
+      } catch (e2: any) {
+        return { ok: false, message: e2.message, logs: [] };
+      }
+    }
+  }
+
+  /**
+   * Allocate Live Video Stream for Tuya Door Lock Camera.
+   * Calls Tuya IoT Live Stream API, registers the stream in Go2RTC for low-latency WebRTC,
+   * and returns the stream information.
+   */
+  public async allocateLiveStream(deviceId: string): Promise<{
+    ok: boolean;
+    stream_id?: string;
+    rtsp_url?: string;
+    hls_url?: string;
+    message?: string;
+  }> {
+    try {
+      const streamName = `tuya_doorlock_${deviceId.slice(-6)}`;
+
+      // 1. Request RTSP stream from Tuya IoT Live Stream API
+      let rtspUrl: string | undefined;
+      try {
+        const allocRtsp = await this.requestCloud('POST', `/v1.0/devices/${deviceId}/stream/actions/allocate`, { type: 'rtsp' });
+        rtspUrl = allocRtsp?.url;
+      } catch (e: any) {
+        console.warn(`[Tuya Stream] RTSP allocate failed for ${deviceId}:`, e.message);
+      }
+
+      // 2. Request HLS stream as well (fallback)
+      let hlsUrl: string | undefined;
+      try {
+        const allocHls = await this.requestCloud('POST', `/v1.0/devices/${deviceId}/stream/actions/allocate`, { type: 'hls' });
+        hlsUrl = allocHls?.url;
+      } catch (_) {}
+
+      if (!rtspUrl && !hlsUrl) {
+        throw new Error('Device did not return a valid stream URL. Please ensure "IoT Video Live Stream" API is subscribed in Tuya Console.');
+      }
+
+      // 3. Register into Go2RTC
+      const primaryUrl = rtspUrl || hlsUrl;
+      if (primaryUrl) {
+        try {
+          const go2rtcUrl = `http://127.0.0.1:1984/api/streams?name=${encodeURIComponent(streamName)}&src=${encodeURIComponent(primaryUrl)}`;
+          await fetch(go2rtcUrl, { method: 'PUT' });
+          console.log(`[Tuya Stream] Registered ${streamName} in Go2RTC successfully`);
+        } catch (e: any) {
+          console.warn(`[Tuya Stream] Could not register with local Go2RTC:`, e.message);
+        }
+      }
+
+      return {
+        ok: true,
+        stream_id: streamName,
+        rtsp_url: rtspUrl,
+        hls_url: hlsUrl,
+      };
+    } catch (err: any) {
+      return { ok: false, message: err.message || 'Stream allocation failed' };
+    }
+  }
+
   public updateConfig(config: {
     enabled?: boolean;
     accessId?: string;

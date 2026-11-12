@@ -675,8 +675,8 @@ function optimizeRtspUrl(url?: string | null): string | null {
   // Cleanly strip any existing fragment or malformed query options
   const base = u.split('#')[0].split('&backchannel')[0].split('&transport')[0].trim();
 
-  // Always append proper go2rtc hashtags: #tcp#backchannel=0
-  return `${base}#tcp#backchannel=0`;
+  // Always append proper go2rtc hashtag for reliable TCP interleaved streaming
+  return `${base}#tcp`;
 }
 
 // Helper: Normalize camera ONVIF endpoint if user entered RTSP URL by mistake
@@ -1054,12 +1054,101 @@ router.post('/ttlock-unlock', async (req, res) => {
     const { lock_id } = req.body;
     if (!lock_id) return res.status(400).json({ error: 'lock_id is required' });
 
-    const config = db.prepare('SELECT ttlock_client_id, ttlock_access_token, ttlock_legacy_url FROM building_config WHERE id = 1').get() as any;
+    let config = db.prepare('SELECT ttlock_client_id, ttlock_client_secret, ttlock_username, ttlock_password_md5, ttlock_access_token, ttlock_legacy_url FROM building_config WHERE id = 1').get() as any;
     if (!config?.ttlock_access_token) {
       return res.status(400).json({ error: 'TTLock account not authenticated. Please sync in Admin Studio.' });
     }
 
-    const result = await TTLockService.unlock(config.ttlock_client_id, config.ttlock_access_token, lock_id, config.ttlock_legacy_url);
+    let result = await TTLockService.unlock(config.ttlock_client_id, config.ttlock_access_token, lock_id, config.ttlock_legacy_url);
+
+    // If token expired (-1004 or 10003), attempt auto-refresh using stored password hash
+    if (!result.ok && (result.errcode === 10003 || result.errcode === -1004) && config.ttlock_password_md5) {
+      console.log('[TTLock] Access token expired during unlock. Attempting auto-reauth...');
+      try {
+        const auth = await TTLockService.authenticate(
+          config.ttlock_client_id,
+          config.ttlock_client_secret,
+          config.ttlock_username,
+          config.ttlock_password_md5
+        );
+        db.prepare('UPDATE building_config SET ttlock_access_token = ?, ttlock_token_expiry = ? WHERE id = 1')
+          .run(auth.accessToken, Date.now() + (auth.expiresIn * 1000));
+        config.ttlock_access_token = auth.accessToken;
+        // Retry unlock with refreshed token
+        result = await TTLockService.unlock(config.ttlock_client_id, config.ttlock_access_token, lock_id, config.ttlock_legacy_url);
+      } catch (authErr: any) {
+        console.error('[TTLock] Auto-reauth failed:', authErr.message);
+      }
+    }
+
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Lock TTLock
+router.post('/ttlock-lock', async (req, res) => {
+  try {
+    const { lock_id } = req.body;
+    if (!lock_id) return res.status(400).json({ error: 'lock_id is required' });
+
+    const config = db.prepare('SELECT ttlock_client_id, ttlock_access_token FROM building_config WHERE id = 1').get() as any;
+    if (!config?.ttlock_access_token) {
+      return res.status(400).json({ error: 'TTLock account not authenticated.' });
+    }
+
+    const result = await TTLockService.lock(config.ttlock_client_id, config.ttlock_access_token, lock_id);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Generate Passcode / OTP for TTLock
+router.post('/ttlock-passcode', async (req, res) => {
+  try {
+    const { lock_id, type } = req.body;
+    if (!lock_id) return res.status(400).json({ error: 'lock_id is required' });
+
+    const config = db.prepare('SELECT ttlock_client_id, ttlock_access_token FROM building_config WHERE id = 1').get() as any;
+    if (!config?.ttlock_access_token) {
+      return res.status(400).json({ error: 'TTLock account not authenticated.' });
+    }
+
+    const result = await TTLockService.getPasscode(config.ttlock_client_id, config.ttlock_access_token, lock_id, type || 1);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Fetch TTLock Unlock Records / Logs
+router.get('/ttlock-records/:lock_id', async (req, res) => {
+  try {
+    const { lock_id } = req.params;
+    const config = db.prepare('SELECT ttlock_client_id, ttlock_access_token FROM building_config WHERE id = 1').get() as any;
+    if (!config?.ttlock_access_token) {
+      return res.status(400).json({ error: 'TTLock account not authenticated.' });
+    }
+
+    const result = await TTLockService.getRecords(config.ttlock_client_id, config.ttlock_access_token, lock_id);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Fetch TTLock Detail (Battery & Gateway)
+router.get('/ttlock-detail/:lock_id', async (req, res) => {
+  try {
+    const { lock_id } = req.params;
+    const config = db.prepare('SELECT ttlock_client_id, ttlock_access_token FROM building_config WHERE id = 1').get() as any;
+    if (!config?.ttlock_access_token) {
+      return res.status(400).json({ error: 'TTLock account not authenticated.' });
+    }
+
+    const result = await TTLockService.getDetail(config.ttlock_client_id, config.ttlock_access_token, lock_id);
     return res.json(result);
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });

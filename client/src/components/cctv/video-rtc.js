@@ -15,8 +15,8 @@ export class VideoRTC {
         this.DISCONNECT_TIMEOUT = 5000;
         this.RECONNECT_TIMEOUT = 10000;
 
-        /** Supported streaming modes: 'webrtc,mse' prioritized for zero-latency with instant fallback */
-        this.mode = 'webrtc,mse';
+        /** Supported streaming modes: 'webrtc' prioritized for zero-latency */
+        this.mode = 'webrtc';
 
         /** Requested media tracks */
         this.media = 'video,audio';
@@ -39,8 +39,6 @@ export class VideoRTC {
         this.ws = null;
         this.wsURL = '';
         this.pc = null;
-        this.ms = null;
-        this.blobUrl = null;
         this.connectTS = 0;
         this.reconnectTID = 0;
         this.disconnectTID = 0;
@@ -207,12 +205,6 @@ export class VideoRTC {
 
         this.onmessage = {};
 
-        if (this.blobUrl) {
-            try { URL.revokeObjectURL(this.blobUrl); } catch (_) {}
-            this.blobUrl = null;
-        }
-        this.ms = null;
-
         if (this.video && !preserveVideo) {
             try {
                 this.video.pause();
@@ -242,10 +234,8 @@ export class VideoRTC {
 
         if (this.mode.includes('webrtc') && 'RTCPeerConnection' in window) {
             this.onwebrtc();
-        } else if (this.mode.includes('mse') && 'MediaSource' in window) {
-            this.onmse();
         } else {
-            console.warn('[VideoRTC] Neither WebRTC nor MSE supported');
+            console.warn('[VideoRTC] RTCPeerConnection not supported');
         }
     }
 
@@ -281,17 +271,6 @@ export class VideoRTC {
         this.pc = pc;
         this.pcState = WebSocket.CONNECTING;
 
-        // Fallback timer: if WebRTC does not receive media frames within 4s, gracefully switch to MSE
-        const mseFallbackTimer = setTimeout(() => {
-            if (this.isDestroyed || this.pcState === WebSocket.OPEN) return;
-            if (this.mode.includes('mse') && 'MediaSource' in window) {
-                console.log('[VideoRTC] WebRTC handshake delayed, switching to MSE pipeline...');
-                try { pc.close(); } catch (_) {}
-                this.pc = null;
-                this.onmse();
-            }
-        }, 4000);
-
         // ICE candidate exchange
         pc.addEventListener('icecandidate', (ev) => {
             if (this.isDestroyed || this.pc !== pc) return;
@@ -307,7 +286,6 @@ export class VideoRTC {
         const mediaStream = new MediaStream();
         pc.addEventListener('track', (ev) => {
             if (this.isDestroyed || this.pc !== pc) return;
-            clearTimeout(mseFallbackTimer);
             if (ev.track) {
                 mediaStream.addTrack(ev.track);
 
@@ -393,69 +371,7 @@ export class VideoRTC {
             this.send({ type: 'webrtc/offer', value: offer.sdp });
         }).catch((err) => {
             console.warn('[VideoRTC] createOffer error:', err);
-            clearTimeout(mseFallbackTimer);
-            if (this.mode.includes('mse')) {
-                this.onmse();
-            }
         });
-    }
-
-    /**
-     * Connect via MediaSource Extensions (MSE) pipeline for maximum reliability.
-     */
-    onmse() {
-        if (this.isDestroyed || !('MediaSource' in window)) return;
-        console.log('[VideoRTC] Starting MSE streaming pipeline for:', this.wsURL);
-
-        const ms = new MediaSource();
-        this.ms = ms;
-        this.blobUrl = URL.createObjectURL(ms);
-        this.video.src = this.blobUrl;
-
-        ms.addEventListener('sourceopen', () => {
-            if (this.isDestroyed || this.ms !== ms) return;
-            this.send({ type: 'mse' });
-        }, { once: true });
-
-        this.onmessage['mse'] = (msg) => {
-            if (this.isDestroyed || this.ms !== ms) return;
-            if (msg.type === 'mse' && msg.value) {
-                try {
-                    const sb = ms.addSourceBuffer(msg.value);
-                    sb.mode = 'segments';
-
-                    const queue = [];
-                    const appendNext = () => {
-                        if (queue.length > 0 && !sb.updating) {
-                            try {
-                                sb.appendBuffer(queue.shift());
-                            } catch (_) {}
-                        }
-                    };
-                    sb.addEventListener('updateend', appendNext);
-
-                    if (this.ws) {
-                        const prevHandler = this.ws.onmessage;
-                        this.ws.onmessage = (ev) => {
-                            if (this.isDestroyed) return;
-                            if (ev.data instanceof ArrayBuffer) {
-                                queue.push(ev.data);
-                                appendNext();
-                                this.play();
-                                this.pcState = WebSocket.OPEN;
-                                if (typeof this.onConnected === 'function') {
-                                    this.onConnected();
-                                }
-                            } else {
-                                if (prevHandler) prevHandler(ev);
-                            }
-                        };
-                    }
-                } catch (err) {
-                    console.warn('[VideoRTC] addSourceBuffer error:', err);
-                }
-            }
-        };
     }
 
     /**

@@ -16,6 +16,7 @@ interface MultiHubContextType {
   primaryHubId: string | null;
   callService: (hubId: string | undefined | null, domain: string, service: string, serviceData?: Record<string, any>) => Promise<any>;
   getEntity: (entityId: string, hubId?: string | null) => HaEntityState | undefined;
+  reconnectHub: (hubId?: string | null) => void;
 }
 
 const MultiHubContext = createContext<MultiHubContextType | undefined>(undefined);
@@ -54,34 +55,53 @@ export const MultiHubHomeAssistantProvider: React.FC<{ children: React.ReactNode
 
     const isPageHttps = window.location.protocol === 'https:';
     const isLocalHttp = hub.local_url.startsWith('http://');
+    const isLocalHost =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
     // Build candidate WS URLs
     const proxyWsUrl = `${isPageHttps ? 'wss:' : 'ws:'}//${window.location.host}/ha-ws/${hubId}`;
     let localWsUrl = hub.local_url.replace(/^http:\/\//, 'ws://').replace(/^https:\/\//, 'wss://').replace(/\/+$/, '') + '/api/websocket';
     let cloudWsUrl = hub.cloud_url ? hub.cloud_url.replace(/^http:\/\//, 'ws://').replace(/^https:\/\//, 'wss://').replace(/\/+$/, '') + '/api/websocket' : null;
 
-    // Mixed content protection: If page is HTTPS and local is HTTP, browser will block localWsUrl directly.
-    // In that case, prioritize proxyWsUrl or HTTPS cloudWsUrl!
+    // Mixed content protection & Remote client handling:
+    // If client is on a remote system (!isLocalHost) or HTTPS, prioritize server proxyWsUrl (same-origin).
+    // Remote clients on Wi-Fi are often blocked from direct hub IPs by AP isolation or browser Private Network Access checks.
     let candidateUrls: string[] = [];
-    if (isPageHttps && isLocalHttp) {
-      candidateUrls = [proxyWsUrl, cloudWsUrl].filter(Boolean) as string[];
+    if (!isLocalHost || (isPageHttps && isLocalHttp)) {
+      candidateUrls = [proxyWsUrl, localWsUrl, cloudWsUrl].filter(Boolean) as string[];
     } else {
-      // Race local with 260ms head start
+      // On localhost host machine, race direct LAN URL with 200ms head start, fallback to proxy
       candidateUrls = [localWsUrl, proxyWsUrl, cloudWsUrl].filter(Boolean) as string[];
     }
 
     let winnerSocket: WebSocket | null = null;
     let hasWon = false;
+    const activeSockets: WebSocket[] = [];
+    let failureCount = 0;
+    let reconnectScheduled = false;
+
+    const scheduleReconnect = () => {
+      if (reconnectScheduled) return;
+      reconnectScheduled = true;
+      setConnectionStatusByHub((prev) => ({
+        ...prev,
+        [hubId]: { isConnected: false, activeUrl: '' },
+      }));
+      delete socketsRef.current[hubId];
+      setTimeout(() => connectHub(hub), 3000);
+    };
 
     candidateUrls.forEach((url, index) => {
-      // 260ms head start for local URL
-      const delay = index === 0 ? 0 : 260;
+      // 200ms head start for index 0
+      const delay = index === 0 ? 0 : 200;
 
       setTimeout(() => {
         if (hasWon) return;
 
         try {
           const ws = new WebSocket(url);
+          activeSockets.push(ws);
 
           ws.onopen = () => {
             // Wait for auth_required message
@@ -99,6 +119,13 @@ export const MultiHubHomeAssistantProvider: React.FC<{ children: React.ReactNode
                   winnerSocket = ws;
                   socketsRef.current[hubId] = ws;
 
+                  // Immediately close all losing candidate sockets to prevent CLOSE_WAIT accumulation
+                  activeSockets.forEach((s) => {
+                    if (s !== ws) {
+                      try { s.close(); } catch (_) {}
+                    }
+                  });
+
                   setConnectionStatusByHub((prev) => ({
                     ...prev,
                     [hubId]: { isConnected: true, activeUrl: url },
@@ -111,6 +138,8 @@ export const MultiHubHomeAssistantProvider: React.FC<{ children: React.ReactNode
                   // 2. Subscribe to live push updates
                   const subReqId = messageIdRef.current[hubId]++;
                   ws.send(JSON.stringify({ id: subReqId, type: 'subscribe_events', event_type: 'state_changed' }));
+                } else if (ws !== winnerSocket) {
+                  try { ws.close(); } catch (_) {}
                 }
               } else if (msg.type === 'result') {
                 if (Array.isArray(msg.result)) {
@@ -168,25 +197,28 @@ export const MultiHubHomeAssistantProvider: React.FC<{ children: React.ReactNode
 
           ws.onerror = () => {
             if (winnerSocket === ws) {
-              setConnectionStatusByHub((prev) => ({
-                ...prev,
-                [hubId]: { isConnected: false, activeUrl: '' },
-              }));
+              scheduleReconnect();
             }
           };
 
           ws.onclose = () => {
             if (winnerSocket === ws) {
-              setConnectionStatusByHub((prev) => ({
-                ...prev,
-                [hubId]: { isConnected: false, activeUrl: '' },
-              }));
-              delete socketsRef.current[hubId];
-              // Reconnect after 3s
-              setTimeout(() => connectHub(hub), 3000);
+              scheduleReconnect();
+            } else if (!hasWon) {
+              failureCount++;
+              if (failureCount >= candidateUrls.length) {
+                scheduleReconnect();
+              }
             }
           };
-        } catch (_) {}
+        } catch (_) {
+          if (!hasWon) {
+            failureCount++;
+            if (failureCount >= candidateUrls.length) {
+              scheduleReconnect();
+            }
+          }
+        }
       }, delay);
     });
   }, []);
@@ -324,6 +356,20 @@ export const MultiHubHomeAssistantProvider: React.FC<{ children: React.ReactNode
     [entitiesByHub]
   );
 
+  const reconnectHub = useCallback(
+    (targetHubId?: string | null) => {
+      if (targetHubId) {
+        const hub = enabledHubs.find((h) => h.id === targetHubId);
+        if (hub) {
+          connectHub(hub);
+        }
+      } else {
+        enabledHubs.forEach((hub) => connectHub(hub));
+      }
+    },
+    [enabledHubs, connectHub]
+  );
+
   // Construct hubs map for consumer
   const hubsMap: Record<string, HubConnectionState> = {};
   for (const hub of enabledHubs) {
@@ -344,6 +390,7 @@ export const MultiHubHomeAssistantProvider: React.FC<{ children: React.ReactNode
         primaryHubId,
         callService,
         getEntity,
+        reconnectHub,
       }}
     >
       {children}
@@ -366,6 +413,7 @@ export const useHA = (hubId?: string | null) => {
       context.callService(resolvedHubId, domain, service, data),
     getEntity: (id: string) => context.getEntity(id, resolvedHubId),
     hubs: context.hubs,
+    reconnectHub: context.reconnectHub,
   };
 };
 

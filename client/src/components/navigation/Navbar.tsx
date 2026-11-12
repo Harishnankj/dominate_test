@@ -38,7 +38,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const { hubs: haHubs } = useHA();
 
   const enabledHaHubs = (data?.hubs || []).filter((h) => h.enabled);
-  const connectedHaCount = Object.values(haHubs).filter((h) => h.isConnected).length;
+  const connectedHaCount = enabledHaHubs.filter((h) => haHubs[h.id]?.isConnected).length;
   const isHaConnected = connectedHaCount > 0;
 
   const [weather, setWeather] = useState<{ temp: number; label: string }>({ temp: 28, label: 'HQ' });
@@ -83,20 +83,34 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </div>
             <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
-              <span className="flex items-center gap-1 font-mono text-[11px]">
+              <button
+                type="button"
+                onClick={() => onOpenAdmin()}
+                className="flex items-center gap-1 font-mono text-[11px] cursor-pointer hover:opacity-80 transition-opacity text-left bg-transparent border-0 p-0"
+                title="Click to view Home Assistant hubs status in Admin Studio"
+              >
                 {isHaConnected ? (
-                  <span className="text-emerald-400 flex items-center gap-1 font-mono text-[11px]">
+                  <span
+                    className={`flex items-center gap-1 font-mono text-[11px] ${
+                      connectedHaCount === enabledHaHubs.length
+                        ? 'text-emerald-400'
+                        : 'text-amber-400'
+                    }`}
+                  >
                     <Wifi className="w-3 h-3" />{' '}
                     {enabledHaHubs.length > 1
                       ? `HA Active (${connectedHaCount}/${enabledHaHubs.length})`
                       : 'HA Active'}
                   </span>
                 ) : (
-                  <span className="text-slate-400 flex items-center gap-1" title="Home Assistant offline - local direct Zigbee & Tuya active">
-                    <WifiOff className="w-3 h-3 text-slate-500" /> HA Offline
+                  <span
+                    className="text-rose-400/90 flex items-center gap-1"
+                    title="Home Assistant offline - local direct Zigbee & Tuya active"
+                  >
+                    <WifiOff className="w-3 h-3 text-rose-400" /> HA Offline
                   </span>
                 )}
-              </span>
+              </button>
               {z2mStatus?.connected && (
                 <span className="text-emerald-400 flex items-center gap-1 font-mono text-[11px] border-l border-white/10 pl-2">
                   <Radio className="w-3 h-3" /> Zigbee Online

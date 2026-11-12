@@ -1,4 +1,5 @@
 import http from 'http';
+import net from 'net';
 import path from 'path';
 import fs from 'fs';
 import express from 'express';
@@ -90,6 +91,41 @@ automationScheduler.start();
 
 // 8. Initialize Zigbee2MQTT / MQTT client
 mqttService.init();
+
+// 9. Start transparent RTSP Basic Auth bridge for Office Hikvision camera (192.168.0.118:554)
+// Stripping the WWW-Authenticate: Digest challenge causes Go2RTC to authenticate via Basic auth cleanly.
+function startRtspBasicAuthBridges() {
+  const bridge = net.createServer((clientSocket) => {
+    const targetSocket = net.createConnection({ host: '192.168.0.118', port: 554 });
+    clientSocket.pipe(targetSocket);
+
+    targetSocket.on('data', (chunk) => {
+      let text = chunk.toString('latin1');
+      if (text.includes('WWW-Authenticate: Digest')) {
+        text = text.replace(/WWW-Authenticate: Digest[^\r\n]*\r\n/g, '');
+        clientSocket.write(Buffer.from(text, 'latin1'));
+      } else {
+        clientSocket.write(chunk);
+      }
+    });
+
+    clientSocket.on('error', () => targetSocket.destroy());
+    targetSocket.on('error', () => clientSocket.destroy());
+    clientSocket.on('close', () => targetSocket.destroy());
+    targetSocket.on('close', () => clientSocket.destroy());
+  });
+
+  bridge.on('error', (err: any) => {
+    if (err?.code !== 'EADDRINUSE') {
+      console.warn('[RTSP Bridge] Proxy error:', err.message);
+    }
+  });
+
+  bridge.listen(5555, '127.0.0.1', () => {
+    console.log('[RTSP Bridge] Office Hikvision RTSP bridge active on 127.0.0.1:5555 -> 192.168.0.118:554');
+  });
+}
+startRtspBasicAuthBridges();
 
 process.on('uncaughtException', (err) => {
   console.warn('[SERVER] Caught unhandled exception:', err.message);

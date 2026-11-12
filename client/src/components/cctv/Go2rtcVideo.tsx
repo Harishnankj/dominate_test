@@ -11,7 +11,6 @@ import {
   Volume2,
   VolumeX,
   AlertCircle,
-  Camera as CameraIcon,
 } from 'lucide-react';
 import type { Camera } from '../../types';
 import { useBootstrap } from '../../context/BootstrapContext';
@@ -39,30 +38,21 @@ export const Go2rtcVideo: React.FC<Go2rtcVideoProps> = ({
 
   const streamId = camera.stream_id;
 
-  // Resolves the WebSocket URL: directly connects to Go2RTC port 1984 (or configured base URL)
+  // Resolves the WebSocket URL: uses same-origin /api/ws proxy (seamless on localhost, remote IP, and mobile HTTPS)
   const wsUrl = useMemo(() => {
-    const wsProtocol =
-      typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-
-    // Normalize 'localhost' to '127.0.0.1' to avoid Chrome IPv6 [::1] loopback connection drops on Windows
-    let host = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : '127.0.0.1';
-    if (host === 'localhost') {
-      host = '127.0.0.1';
-    }
-
-    let port = '1984';
-
-    if (data?.config?.go2rtc_base_url) {
+    // If an explicit external Go2RTC base URL is configured in building_config, respect it
+    if (data?.config?.go2rtc_base_url && data.config.go2rtc_base_url.trim()) {
       try {
         const u = new URL(data.config.go2rtc_base_url);
-        if (u.port) port = u.port;
-        if (u.hostname && u.hostname !== 'localhost' && u.hostname !== '127.0.0.1' && u.hostname !== '') {
-          host = u.hostname;
-        }
+        const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${wsProto}//${u.host}/api/ws?src=${encodeURIComponent(streamId)}`;
       } catch (_) {}
     }
 
-    return `${wsProtocol}//${host}:${port}/api/ws?src=${encodeURIComponent(streamId)}`;
+    // Default to robust same-origin proxy (works across localhost:5173, remote LAN IP, and mobile HTTPS:5174)
+    const wsProtocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = typeof window !== 'undefined' && window.location.host ? window.location.host : '127.0.0.1:5173';
+    return `${wsProtocol}//${host}/api/ws?src=${encodeURIComponent(streamId)}`;
   }, [data?.config?.go2rtc_base_url, streamId]);
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -73,9 +63,6 @@ export const Go2rtcVideo: React.FC<Go2rtcVideoProps> = ({
   const [hasAudio, setHasAudio] = useState(false);
   const [showMiniPtz, setShowMiniPtz] = useState(false);
   const [miniPtzDir, setMiniPtzDir] = useState<string | null>(null);
-  const [miniPtzError, setMiniPtzError] = useState<string | null>(null);
-  const isHoldingRef = useRef<boolean>(false);
-  const pointerDownTimeRef = useRef<number>(0);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -173,74 +160,12 @@ export const Go2rtcVideo: React.FC<Go2rtcVideoProps> = ({
     setIsMuted((prev) => !prev);
   }, []);
 
-  // Capture snapshot directly from this camera's video element
-  const handleSnapshot = useCallback(
-    (e?: React.MouseEvent) => {
-      e?.stopPropagation();
-      const video = videoRef.current;
-      if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-          const link = document.createElement('a');
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-          link.download = `${camera.name.replace(/\s+/g, '_')}_${timestamp}.jpg`;
-          link.href = dataUrl;
-          link.click();
-        }
-      } catch (err) {
-        console.error('Snapshot failed:', err);
-      }
-    },
-    [camera.name]
-  );
-
-  const startContinuousPtz = async (dir: string) => {
+  const handleMiniPtz = async (dir: string) => {
     setMiniPtzDir(dir);
-    setMiniPtzError(null);
-    isHoldingRef.current = true;
     try {
-      const res = await ApiService.ptzCamera(camera.id, { direction: dir, speed: 0.5, durationMs: 0 });
-      if ((res as any)?.error) {
-        setMiniPtzError((res as any).error);
-      }
-    } catch (err: any) {
-      setMiniPtzError(err.message || 'PTZ Error');
-    }
-  };
-
-  const stopContinuousPtz = async () => {
-    if (!isHoldingRef.current && !miniPtzDir) return;
-    isHoldingRef.current = false;
-    setMiniPtzDir(null);
-    try {
-      await ApiService.ptzCamera(camera.id, { action: 'stop' });
+      await ApiService.ptzCamera(camera.id, { direction: dir, speed: 0.4, durationMs: 400 });
     } catch (_) {}
-  };
-
-  const handlePointerDown = (dir: string, e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    pointerDownTimeRef.current = Date.now();
-    startContinuousPtz(dir);
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const elapsed = Date.now() - pointerDownTimeRef.current;
-    if (elapsed < 250) {
-      setTimeout(() => {
-        stopContinuousPtz();
-      }, 350 - elapsed);
-    } else {
-      stopContinuousPtz();
-    }
+    setTimeout(() => setMiniPtzDir(null), 400);
   };
 
   return (
@@ -344,15 +269,6 @@ export const Go2rtcVideo: React.FC<Go2rtcVideoProps> = ({
             </button>
           )}
 
-          {/* Take Snapshot */}
-          <button
-            onClick={handleSnapshot}
-            title="Take Snapshot"
-            className="p-1.5 rounded-lg bg-black/60 hover:bg-black/90 text-slate-300 hover:text-white border border-white/10 backdrop-blur-md active:scale-95 transition-all"
-          >
-            <CameraIcon className="w-3.5 h-3.5" />
-          </button>
-
           <button
             onClick={handleRetry}
             disabled={isReloading}
@@ -410,91 +326,60 @@ export const Go2rtcVideo: React.FC<Go2rtcVideoProps> = ({
           </div>
 
           <button
-            onPointerDown={(e) => handlePointerDown('up', e)}
-            onPointerUp={handlePointerUp}
-            onPointerLeave={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-            className={`p-1.5 rounded-lg transition-all select-none touch-none ${
+            onClick={() => handleMiniPtz('up')}
+            className={`p-1.5 rounded-lg transition-all ${
               miniPtzDir === 'up'
-                ? 'bg-cyan-400 text-slate-950 shadow-glow scale-110'
+                ? 'bg-cyan-400 text-slate-950 shadow-glow'
                 : 'bg-white/10 hover:bg-white/20 text-white active:scale-95'
             }`}
-            title="Hold to Tilt Up"
+            title="Tilt Up"
           >
             <ArrowUp className="w-3.5 h-3.5" />
           </button>
 
           <div className="flex items-center gap-1">
             <button
-              onPointerDown={(e) => handlePointerDown('left', e)}
-              onPointerUp={handlePointerUp}
-              onPointerLeave={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-              className={`p-1.5 rounded-lg transition-all select-none touch-none ${
+              onClick={() => handleMiniPtz('left')}
+              className={`p-1.5 rounded-lg transition-all ${
                 miniPtzDir === 'left'
-                  ? 'bg-cyan-400 text-slate-950 shadow-glow scale-110'
+                  ? 'bg-cyan-400 text-slate-950 shadow-glow'
                   : 'bg-white/10 hover:bg-white/20 text-white active:scale-95'
               }`}
-              title="Hold to Pan Left"
+              title="Pan Left"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => stopContinuousPtz()}
-              className="w-6 h-6 rounded-md bg-white/5 hover:bg-white/15 text-[9px] font-bold text-slate-300 flex items-center justify-center border border-white/10 active:scale-90"
+              onClick={() => ApiService.ptzCamera(camera.id, { action: 'stop' }).catch(() => {})}
+              className="w-6 h-6 rounded-md bg-white/5 hover:bg-white/15 text-[9px] font-bold text-slate-300 flex items-center justify-center border border-white/10"
               title="Stop"
             >
               &bull;
             </button>
             <button
-              onPointerDown={(e) => handlePointerDown('right', e)}
-              onPointerUp={handlePointerUp}
-              onPointerLeave={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-              className={`p-1.5 rounded-lg transition-all select-none touch-none ${
+              onClick={() => handleMiniPtz('right')}
+              className={`p-1.5 rounded-lg transition-all ${
                 miniPtzDir === 'right'
-                  ? 'bg-cyan-400 text-slate-950 shadow-glow scale-110'
+                  ? 'bg-cyan-400 text-slate-950 shadow-glow'
                   : 'bg-white/10 hover:bg-white/20 text-white active:scale-95'
               }`}
-              title="Hold to Pan Right"
+              title="Pan Right"
             >
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
           <button
-            onPointerDown={(e) => handlePointerDown('down', e)}
-            onPointerUp={handlePointerUp}
-            onPointerLeave={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-            className={`p-1.5 rounded-lg transition-all select-none touch-none ${
+            onClick={() => handleMiniPtz('down')}
+            className={`p-1.5 rounded-lg transition-all ${
               miniPtzDir === 'down'
-                ? 'bg-cyan-400 text-slate-950 shadow-glow scale-110'
+                ? 'bg-cyan-400 text-slate-950 shadow-glow'
                 : 'bg-white/10 hover:bg-white/20 text-white active:scale-95'
             }`}
-            title="Hold to Tilt Down"
+            title="Tilt Down"
           >
             <ArrowDown className="w-3.5 h-3.5" />
           </button>
-
-          {/* Live Action Status or Error Hint */}
-          <div className="pt-1 text-center select-none">
-            {miniPtzDir ? (
-              <span className="text-[9px] font-mono text-cyan-300 font-bold animate-pulse">
-                Holding {miniPtzDir.toUpperCase()}...
-              </span>
-            ) : miniPtzError ? (
-              <div className="px-1.5 py-0.5 rounded bg-rose-500/20 border border-rose-500/40 text-[8px] text-rose-300 font-mono max-w-[130px] leading-tight">
-                {miniPtzError.includes('Authorization') || miniPtzError.includes('401')
-                  ? 'ONVIF Pass Error: Check Admin Studio -> CCTV'
-                  : miniPtzError}
-              </div>
-            ) : (
-              <span className="text-[8px] font-mono text-slate-400">
-                Hold arrow to move
-              </span>
-            )}
-          </div>
         </div>
       )}
 

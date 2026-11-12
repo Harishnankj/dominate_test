@@ -33,16 +33,28 @@ export function startHttpsGateway(httpsPort = 5174, targetPort = 5173) {
     }
 
     const certContent = fs.readFileSync(foundCert, 'utf8');
+    const resolveTargetPort = (url: string = ''): number => {
+      const clean = url.split('?')[0];
+      if (clean.startsWith('/ha-ws/') || clean.startsWith('/api/live-sync') || clean.startsWith('/live-sync')) {
+        return 4000;
+      }
+      if (clean.startsWith('/api/ws') || clean.startsWith('/api/streams')) {
+        return 1984;
+      }
+      return targetPort;
+    };
+
     const proxyServer = https.createServer(
       {
         key: certContent,
         cert: certContent,
       },
       (req, res) => {
+        const port = resolveTargetPort(req.url);
         const proxyReq = http.request(
           {
             hostname: '127.0.0.1',
-            port: targetPort,
+            port,
             path: req.url,
             method: req.method,
             headers: {
@@ -68,9 +80,10 @@ export function startHttpsGateway(httpsPort = 5174, targetPort = 5173) {
       }
     );
 
-    // Proxy WebSocket upgrades (Vite HMR, HA WS, Live Sync WS)
+    // Proxy WebSocket upgrades (Vite HMR, HA WS, Live Sync WS, Go2RTC WebRTC)
     proxyServer.on('upgrade', (req, socket, head) => {
-      const proxySocket = net.connect(targetPort, '127.0.0.1', () => {
+      const port = resolveTargetPort(req.url);
+      const proxySocket = net.connect(port, '127.0.0.1', () => {
         let rawHeaders = `${req.method} ${req.url} HTTP/${req.httpVersion}\r\n`;
         for (const [key, value] of Object.entries(req.headers)) {
           if (Array.isArray(value)) {

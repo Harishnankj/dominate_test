@@ -101,19 +101,19 @@ function handleHaProxyConnection(clientWs: WebSocket, hubId: string) {
 
   clientWs.on('message', (data, isBinary) => {
     try {
-      if (!isBinary) {
-        const text = data.toString();
-        const msg = JSON.parse(text);
-        if (msg.type === 'auth' && (!msg.access_token || msg.access_token === 'undefined')) {
-          msg.access_token = hub.access_token;
-          const injected = Buffer.from(JSON.stringify(msg));
-          if (haWs && haWs.readyState === WebSocket.OPEN) {
-            haWs.send(injected);
-          } else {
-            pendingQueue.push(injected);
-          }
-          return;
+      const text = data.toString();
+      const msg = JSON.parse(text);
+      if (msg && msg.type === 'auth') {
+        // Always ensure verified access token from database is injected
+        msg.access_token = hub.access_token;
+        const injected = JSON.stringify(msg);
+        console.log(`[HaProxy] Injecting DB access token for hub ${hubId} (token len: ${hub.access_token?.length})`);
+        if (haWs && haWs.readyState === WebSocket.OPEN) {
+          haWs.send(injected);
+        } else {
+          pendingQueue.push(injected);
         }
+        return;
       }
     } catch (_) {}
 

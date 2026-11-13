@@ -162,7 +162,7 @@ export const CameraFullscreenPage: React.FC<CameraFullscreenPageProps> = ({ came
             onClick={() => setShowPtzPad((s) => !s)}
             className={`p-2 rounded-xl backdrop-blur-md border transition-all ${
               showPtzPad
-                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                ? 'bg-white text-slate-950 border-white font-bold'
                 : 'bg-black/60 text-slate-300 border-white/20 hover:text-white'
             }`}
             title="Toggle PTZ Pad"
@@ -175,7 +175,7 @@ export const CameraFullscreenPage: React.FC<CameraFullscreenPageProps> = ({ came
             onClick={handleToggleAudio}
             className={`p-2 rounded-xl backdrop-blur-md border transition-all ${
               !isMuted
-                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                ? 'bg-white text-slate-950 border-white font-bold'
                 : 'bg-black/60 text-slate-300 border-white/20 hover:text-white'
             }`}
             title={isMuted ? 'Unmute Audio' : 'Mute Audio'}
@@ -233,8 +233,8 @@ export const CameraFullscreenPage: React.FC<CameraFullscreenPageProps> = ({ came
                 <button
                   type="button"
                   onClick={() => setSpeed(0.2)}
-                  className={`px-1.5 py-0.5 text-[10px] rounded font-mono font-bold transition-all ${
-                    speed === 0.2 ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                  className={`px-2 py-0.5 text-[10px] rounded font-mono font-bold transition-all ${
+                    speed === 0.2 ? 'bg-white text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   Slow
@@ -242,8 +242,8 @@ export const CameraFullscreenPage: React.FC<CameraFullscreenPageProps> = ({ came
                 <button
                   type="button"
                   onClick={() => setSpeed(0.4)}
-                  className={`px-1.5 py-0.5 text-[10px] rounded font-mono font-bold transition-all ${
-                    speed === 0.4 ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                  className={`px-2 py-0.5 text-[10px] rounded font-mono font-bold transition-all ${
+                    speed === 0.4 ? 'bg-white text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   Med
@@ -251,8 +251,8 @@ export const CameraFullscreenPage: React.FC<CameraFullscreenPageProps> = ({ came
                 <button
                   type="button"
                   onClick={() => setSpeed(0.8)}
-                  className={`px-1.5 py-0.5 text-[10px] rounded font-mono font-bold transition-all ${
-                    speed === 0.8 ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+                  className={`px-2 py-0.5 text-[10px] rounded font-mono font-bold transition-all ${
+                    speed === 0.8 ? 'bg-white text-slate-950 font-bold' : 'text-slate-400 hover:text-white'
                   }`}
                 >
                   Fast

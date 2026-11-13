@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ArrowUp, ArrowDown, Square, Star, AlignJustify } from 'lucide-react';
 import type { Device } from '../../types';
 import { useBootstrap } from '../../context/BootstrapContext';
@@ -34,7 +34,11 @@ export const BlindsRelayTile: React.FC<BlindsRelayTileProps> = ({ device }) => {
 
     try {
       await ApiService.moveRelayBlinds(device.id, action);
-      await setVirtualState(device.id, { position: action === 'open' ? 100 : action === 'close' ? 0 : position, action, moving: action !== 'stop' });
+      await setVirtualState(device.id, {
+        position: action === 'open' ? 100 : action === 'close' ? 0 : position,
+        action,
+        moving: action !== 'stop',
+      });
     } catch (err) {
       console.warn('[BlindsRelay] Move error:', err);
     }
@@ -47,18 +51,18 @@ export const BlindsRelayTile: React.FC<BlindsRelayTileProps> = ({ device }) => {
   };
 
   return (
-    <div className="relative glass-panel rounded-2xl p-4 border border-white/10 tile-hover">
+    <div className="relative rounded-2xl p-4 bg-[#191A1D] border border-[#383A3E] hover:border-[#4B4E54] transition-all">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-slate-800 text-cyan-400 flex items-center justify-center">
+          <div className="w-11 h-11 rounded-xl bg-[#111214] border border-[#383A3E] text-white flex items-center justify-center">
             <AlignJustify className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="text-sm font-semibold text-white tracking-wide leading-tight">{device.name}</h4>
+            <h4 className="text-sm font-semibold text-[#F5F5F5] tracking-wide leading-tight">{device.name}</h4>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase tracking-wider">
-                {moving ? 'MOVING...' : position > 0 ? `${position}% OPEN` : 'CLOSED'}
+              <span className={`text-[10px] font-mono font-bold uppercase tracking-wider ${position > 0 ? 'text-[#22D68A]' : 'text-[#777777]'}`}>
+                {moving ? 'MOTOR RUNNING...' : position > 0 ? `${position}% OPEN` : 'CLOSED'}
               </span>
             </div>
           </div>
@@ -67,7 +71,7 @@ export const BlindsRelayTile: React.FC<BlindsRelayTileProps> = ({ device }) => {
         <button
           onClick={() => toggleFavorite(device.id)}
           className={`p-1.5 rounded-lg transition-colors ${
-            isFavorite(device.id) ? 'text-amber-400' : 'text-slate-600 hover:text-slate-400'
+            isFavorite(device.id) ? 'text-[#F0B94D]' : 'text-[#777777] hover:text-white'
           }`}
         >
           <Star className={`w-4 h-4 ${isFavorite(device.id) ? 'fill-current' : ''}`} />
@@ -75,14 +79,14 @@ export const BlindsRelayTile: React.FC<BlindsRelayTileProps> = ({ device }) => {
       </div>
 
       {/* Visual Blinds Graphic */}
-      <div className="h-16 w-full bg-slate-950/80 rounded-xl p-2.5 flex flex-col justify-between overflow-hidden border border-white/5 my-2">
+      <div className="h-16 w-full bg-[#111214] rounded-xl p-2.5 flex flex-col justify-between overflow-hidden border border-[#383A3E]/40 my-2">
         {[1, 2, 3, 4, 5].map((i) => {
           const slatOpen = position > (5 - i) * 20;
           return (
             <div
               key={i}
               className={`h-1.5 rounded transition-all duration-700 ${
-                slatOpen ? 'bg-cyan-500/80 shadow-glow' : 'bg-slate-800'
+                slatOpen ? 'bg-white shadow-sm' : 'bg-[#202226]'
               }`}
             />
           );
@@ -93,21 +97,21 @@ export const BlindsRelayTile: React.FC<BlindsRelayTileProps> = ({ device }) => {
       <div className="grid grid-cols-3 gap-2 pt-2">
         <button
           onClick={() => handleAction('open')}
-          className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 text-xs font-semibold border border-white/10"
+          className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#111214] hover:bg-[#202226] active:scale-95 text-white text-xs font-semibold border border-[#383A3E] transition-colors"
         >
-          <ArrowUp className="w-4 h-4 text-cyan-400" /> Open
+          <ArrowUp className="w-4 h-4 text-white" /> Open
         </button>
         <button
           onClick={() => handleAction('stop')}
-          className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 text-xs font-semibold border border-white/10"
+          className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#111214] hover:bg-[#202226] active:scale-95 text-[#A6A6A6] hover:text-white text-xs font-semibold border border-[#383A3E] transition-colors"
         >
-          <Square className="w-3.5 h-3.5 text-amber-400 fill-amber-400" /> Stop
+          <Square className="w-3.5 h-3.5 fill-current" /> Stop
         </button>
         <button
           onClick={() => handleAction('close')}
-          className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 text-xs font-semibold border border-white/10"
+          className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#111214] hover:bg-[#202226] active:scale-95 text-white text-xs font-semibold border border-[#383A3E] transition-colors"
         >
-          <ArrowDown className="w-4 h-4 text-cyan-400" /> Close
+          <ArrowDown className="w-4 h-4 text-white" /> Close
         </button>
       </div>
     </div>

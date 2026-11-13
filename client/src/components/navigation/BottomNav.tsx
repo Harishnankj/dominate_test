@@ -1,5 +1,5 @@
 import React from 'react';
-import { Star, LayoutGrid, Video, Wand2, MessageSquareText } from 'lucide-react';
+import { LayoutDashboard, Layers, Video, Sparkles, MessageSquareCode } from 'lucide-react';
 
 interface BottomNavProps {
   currentTab: string;
@@ -8,15 +8,15 @@ interface BottomNavProps {
 
 export const BottomNav: React.FC<BottomNavProps> = ({ currentTab, setCurrentTab }) => {
   const navItems = [
-    { id: 'favorites', label: 'Favorites', icon: Star },
-    { id: 'view', label: 'Rooms', icon: LayoutGrid },
+    { id: 'favorites', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'view', label: 'Rooms', icon: Layers },
     { id: 'cctv', label: 'CCTV', icon: Video },
-    { id: 'scenes', label: 'Scenes', icon: Wand2 },
-    { id: 'chat', label: 'Assistant', icon: MessageSquareText },
+    { id: 'scenes', label: 'Scenes', icon: Sparkles },
+    { id: 'chat', label: 'Assistant', icon: MessageSquareCode },
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 glass-panel border-t border-white/10 px-2 py-2 md:py-3 max-w-lg md:max-w-2xl mx-auto md:bottom-4 md:rounded-2xl">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#111214] border-t border-[#383A3E] px-2 py-1.5 backdrop-blur-md">
       <div className="flex items-center justify-around">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -25,20 +25,14 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentTab, setCurrentTab 
             <button
               key={item.id}
               onClick={() => setCurrentTab(item.id)}
-              className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all ${
+              className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all ${
                 isActive
-                  ? 'text-cyan-400 scale-105'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'text-[#090A0C] bg-white shadow-sm'
+                  : 'text-[#777777] hover:text-[#F5F5F5]'
               }`}
             >
-              <div
-                className={`p-1.5 rounded-xl transition-all ${
-                  isActive ? 'bg-cyan-500/15 shadow-glow' : ''
-                }`}
-              >
-                <Icon className="w-5 h-5" />
-              </div>
-              <span className={`text-[10px] mt-0.5 font-medium ${isActive ? 'text-cyan-400 font-semibold' : ''}`}>
+              <Icon className="w-4 h-4" />
+              <span className="text-[10px] mt-0.5 font-medium tracking-tight">
                 {item.label}
               </span>
             </button>

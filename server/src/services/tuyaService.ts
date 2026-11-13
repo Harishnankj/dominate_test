@@ -691,30 +691,62 @@ export class TuyaService {
   public async unlockDevice(deviceId: string): Promise<{ ok: boolean; message: string }> {
     try {
       // Step 1: Get password ticket
-      let ticketId: string;
+      let ticketId: string | null = null;
       try {
         const ticketRes = await this.requestCloud('POST', `/v1.0/devices/${deviceId}/door-lock/password-ticket`, {});
-        ticketId = ticketRes?.ticket_id || ticketRes?.ticketId || ticketRes;
-        if (!ticketId) throw new Error('No ticket_id in response');
+        ticketId = ticketRes?.ticket_id || ticketRes?.ticketId || (typeof ticketRes === 'string' ? ticketRes : null);
       } catch (e: any) {
-        throw new Error(`Ticket request failed: ${e.message}`);
+        console.warn(`[Tuya Lock] Ticket request warning for ${deviceId}:`, e.message);
       }
 
-      // Step 2: Use ticket to unlock
+      let unlocked = false;
+      let lastErr = '';
+
+      // Step 2: Use ticket to unlock via standard password-free open-door OpenAPI
+      if (ticketId) {
+        try {
+          await this.requestCloud('POST', `/v1.1/devices/${deviceId}/door-lock/password-free/open-door`, {
+            ticket_id: ticketId,
+          });
+          unlocked = true;
+          console.log(`[Tuya Lock] v1.1 open-door succeeded with ticket ${ticketId}`);
+        } catch (e1: any) {
+          lastErr = e1.message;
+          try {
+            await this.requestCloud('POST', `/v1.0/devices/${deviceId}/door-lock/password-free/open-door`, {
+              ticket_id: ticketId,
+            });
+            unlocked = true;
+            console.log(`[Tuya Lock] v1.0 open-door succeeded with ticket ${ticketId}`);
+          } catch (e2: any) {
+            lastErr = e2.message;
+          }
+        }
+      }
+
+      // Step 3: Send direct motor and unlatch commands (supports both Wi-Fi video locks and standard locks)
       try {
-        await this.requestCloud('POST', `/v1.0/smart-lock/devices/${deviceId}/password-free/door-operate`, {
-          ticket_id: ticketId,
-          operate_type: 1, // 1 = unlock
+        await this.requestCloud('POST', `/v1.0/devices/${deviceId}/commands`, {
+          commands: [
+            { code: 'manual_lock', value: false },
+            { code: 'lock_motor_state', value: true },
+            { code: 'remote_no_dp_key', value: 'AAAB' },
+          ],
         });
-      } catch (e: any) {
-        throw new Error(`Unlock operate failed: ${e.message}`);
+        unlocked = true;
+      } catch (e3: any) {
+        if (!unlocked) lastErr = e3.message;
+      }
+
+      if (!unlocked) {
+        throw new Error(lastErr || 'Unlock operate failed');
       }
 
       // Update cached state
       const cur = this.deviceStates.get(deviceId) || {};
       this.deviceStates.set(deviceId, { ...cur, manual_lock: false, lock_motor_state: true });
       liveSync.broadcast('tuya_state_changed', { device_id: deviceId, state: { ...cur, manual_lock: false, lock_motor_state: true } });
-      return { ok: true, message: 'Door Unlocked & Secured (Outside handle is disengaged).' };
+      return { ok: true, message: 'Door Unlocked: Outside Handle Engaged for Access!' };
     } catch (err: any) {
       return { ok: false, message: err.message || 'Unlock failed' };
     }

@@ -81,8 +81,8 @@ export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
       onClick={handleToggle}
       className={`relative rounded-2xl p-4 transition-all cursor-pointer tile-hover border select-none ${
         isOn
-          ? 'glass-panel-glow border-cyan-500/40'
-          : 'glass-panel border-white/10 opacity-80 hover:opacity-100'
+          ? 'bg-[#191A1D] border-white/40 shadow-card'
+          : 'bg-[#191A1D] border-[#383A3E] opacity-90 hover:opacity-100'
       }`}
     >
       <div className="flex items-center justify-between gap-3">
@@ -90,27 +90,27 @@ export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
           <div
             className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
               isOn
-                ? 'bg-gradient-to-tr from-cyan-500 to-sky-400 text-slate-950 shadow-glow scale-105'
-                : 'bg-slate-800 text-slate-400'
+                ? 'bg-white text-[#090A0C] shadow-sm scale-105 font-bold'
+                : 'bg-[#202226] text-[#777777]'
             }`}
           >
             <Power className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <h4 className="text-sm font-semibold text-white tracking-wide leading-tight">{device.name}</h4>
+              <h4 className="text-sm font-semibold text-[#F5F5F5] tracking-wide leading-tight">{device.name}</h4>
               {isDirectZ2m && (
-                <span title="Controlled directly via Zigbee2MQTT" className="text-[10px] text-emerald-400 flex items-center gap-0.5">
+                <span title="Controlled directly via Zigbee2MQTT" className="text-[10px] text-[#22D68A] flex items-center gap-0.5">
                   <Radio className="w-2.5 h-2.5" />
                 </span>
               )}
               {isDirectTuya && (
-                <span title="Controlled directly via Tuya / Wi-Fi" className="text-[10px] text-amber-400 flex items-center gap-0.5">
+                <span title="Controlled directly via Tuya / Wi-Fi" className="text-[10px] text-[#F0B94D] flex items-center gap-0.5">
                   <Wifi className="w-2.5 h-2.5" />
                 </span>
               )}
             </div>
-            <span className={`text-[10px] font-mono uppercase font-bold tracking-wider mt-0.5 inline-block ${isOn ? 'text-cyan-400' : 'text-slate-500'}`}>
+            <span className={`text-[10px] font-mono uppercase font-bold tracking-wider mt-0.5 inline-block ${isOn ? 'text-white' : 'text-[#777777]'}`}>
               {isOn ? 'ACTIVE' : 'OFF'}
             </span>
           </div>
@@ -123,16 +123,16 @@ export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
               toggleFavorite(device.id);
             }}
             className={`p-1.5 rounded-lg transition-colors ${
-              isFavorite(device.id) ? 'text-amber-400' : 'text-slate-600 hover:text-slate-400'
+              isFavorite(device.id) ? 'text-white' : 'text-[#777777] hover:text-[#A6A6A6]'
             }`}
           >
             <Star className={`w-4 h-4 ${isFavorite(device.id) ? 'fill-current' : ''}`} />
           </button>
-          <div className="text-cyan-400">
+          <div>
             {isOn ? (
-              <ToggleRight className="w-8 h-8 text-cyan-400 fill-cyan-400/20" />
+              <ToggleRight className="w-8 h-8 text-white fill-white/20" />
             ) : (
-              <ToggleLeft className="w-8 h-8 text-slate-600" />
+              <ToggleLeft className="w-8 h-8 text-[#777777]" />
             )}
           </div>
         </div>

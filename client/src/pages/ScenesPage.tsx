@@ -46,21 +46,21 @@ export const ScenesPage: React.FC<ScenesPageProps> = ({ onOpenAdmin }) => {
   return (
     <div className="space-y-6 pb-24 animate-in fade-in">
       {/* Header */}
-      <div className="glass-panel rounded-2xl p-4 border border-white/10 flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-[#191A1D] rounded-2xl p-4 border border-[#383A3E] flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shadow-glow">
+          <div className="w-10 h-10 rounded-xl bg-[#111214] border border-[#383A3E] text-white flex items-center justify-center">
             <Wand2 className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-extrabold text-white">Smart Scenes & Local Automations</h2>
-            <p className="text-xs text-slate-400">One-tap office scenes & scheduled local routines</p>
+            <h2 className="text-base font-extrabold text-[#F5F5F5]">Smart Scenes & Local Automations</h2>
+            <p className="text-xs text-[#A6A6A6]">One-tap architectural presets & scheduled hardware routines</p>
           </div>
         </div>
 
         {isAdmin && onOpenAdmin && (
           <button
             onClick={onOpenAdmin}
-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/30 font-semibold text-xs inline-flex items-center gap-2 shadow-sm transition-all"
+            className="px-4 py-2 rounded-xl bg-[#111214] hover:bg-[#202226] text-white border border-[#383A3E] hover:border-white/40 font-semibold text-xs inline-flex items-center gap-2 shadow-sm transition-all"
           >
             <Settings className="w-4 h-4" /> Manage in Admin Studio
           </button>
@@ -69,16 +69,16 @@ export const ScenesPage: React.FC<ScenesPageProps> = ({ onOpenAdmin }) => {
 
       {/* Scenes List */}
       {automations.length === 0 ? (
-        <div className="glass-panel rounded-2xl p-12 text-center border border-dashed border-white/10 space-y-3">
-          <Wand2 className="w-10 h-10 text-cyan-400 mx-auto opacity-50" />
-          <h3 className="text-sm font-bold text-white">No smart scenes or automations configured yet</h3>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+        <div className="bg-[#191A1D] rounded-2xl p-12 text-center border border-dashed border-[#383A3E] space-y-3">
+          <Wand2 className="w-10 h-10 text-[#777777] mx-auto" />
+          <h3 className="text-sm font-bold text-[#F5F5F5]">No smart scenes or automations configured yet</h3>
+          <p className="text-xs text-[#A6A6A6] max-w-sm mx-auto">
             Automations and scheduled routines can be created and managed in Admin Studio.
           </p>
           {isAdmin && onOpenAdmin && (
             <button
               onClick={onOpenAdmin}
-              className="mt-2 px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 font-bold text-xs shadow-glow inline-flex items-center gap-2"
+              className="mt-2 px-4 py-2 rounded-xl bg-white hover:bg-neutral-200 text-slate-950 font-bold text-xs shadow-sm inline-flex items-center gap-2"
             >
               <Settings className="w-4 h-4" /> Open Admin Studio
             </button>
@@ -104,66 +104,67 @@ export const ScenesPage: React.FC<ScenesPageProps> = ({ onOpenAdmin }) => {
             return (
               <div
                 key={auto.id}
-                className="glass-panel rounded-2xl p-5 border border-white/10 flex flex-col justify-between gap-4 hover:border-white/20 transition-all"
+                className="bg-[#191A1D] rounded-2xl p-5 border border-[#383A3E] hover:border-[#4B4E54] flex flex-col justify-between gap-4 transition-all"
               >
                 <div>
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-bold text-sm text-white flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+                    <h3 className="font-bold text-sm text-[#F5F5F5] flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-white shrink-0" />
                       {auto.name}
                     </h3>
                     <span
-                      className={`text-[10px] font-mono px-2 py-0.5 rounded shrink-0 ${
+                      className={`inline-flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
                         auto.enabled
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-slate-800 text-slate-500 border border-white/5'
+                          ? 'bg-[#22D68A]/10 text-[#22D68A] border border-[#22D68A]/30'
+                          : 'bg-[#111214] text-[#777777] border border-[#383A3E]'
                       }`}
                     >
+                      <span className={`w-1.5 h-1.5 rounded-full ${auto.enabled ? 'bg-[#22D68A]' : 'bg-[#777777]'}`} />
                       {auto.enabled ? 'ACTIVE' : 'PAUSED'}
                     </span>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 mt-2">
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-cyan-400 border border-white/5 flex items-center gap-1">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#111214] text-[#F5F5F5] border border-[#383A3E] flex items-center gap-1">
                       {tr.type === 'time' ? (
                         <>
-                          <Clock className="w-3 h-3" /> Daily at {tr.time}
+                          <Clock className="w-3 h-3 text-[#F0B94D]" /> Daily at {tr.time}
                         </>
                       ) : tr.type === 'presence' ? (
                         <>
-                          <Radio className="w-3 h-3 text-emerald-400" /> Sensor Trigger
+                          <Radio className="w-3 h-3 text-[#22D68A]" /> Sensor Trigger
                         </>
                       ) : (
                         <>
-                          <Wand2 className="w-3 h-3 text-indigo-400" /> Manual Scene
+                          <Wand2 className="w-3 h-3 text-white" /> Manual Scene
                         </>
                       )}
                     </span>
 
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-white/5">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#111214] text-[#A6A6A6] border border-[#383A3E]">
                       {stepCount} {stepCount === 1 ? 'Action' : 'Actions'}
                     </span>
 
-                    <span className="text-[10px] font-mono text-slate-400">
+                    <span className="text-[10px] font-mono text-[#777777]">
                       {auto.last_run_at
                         ? `Ran ${new Date(auto.last_run_at).toLocaleTimeString()}`
-                        : 'Not triggered yet'}
+                        : 'Standby'}
                     </span>
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-white/5 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-400">
-                    {auto.enabled ? 'Ready to trigger' : 'Paused in Admin Studio'}
+                <div className="pt-2 border-t border-[#383A3E]/50 flex items-center justify-between">
+                  <span className="text-[11px] text-[#A6A6A6]">
+                    {auto.enabled ? 'Instant Local Trigger' : 'Paused in Admin Studio'}
                   </span>
 
                   <button
                     onClick={() => handleRunAutomation(auto.id)}
                     disabled={isRunning}
-                    className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all ${
+                    className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm ${
                       isSuccess
-                        ? 'bg-emerald-500 text-slate-950 shadow-glow-emerald'
-                        : 'bg-cyan-500 text-slate-950 hover:bg-cyan-400 shadow-glow active:scale-95'
+                        ? 'bg-[#22D68A] text-slate-950 font-bold'
+                        : 'bg-white text-slate-950 hover:bg-neutral-200 active:scale-95'
                     }`}
                   >
                     {isRunning ? (

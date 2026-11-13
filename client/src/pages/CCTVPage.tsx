@@ -34,38 +34,38 @@ export const CCTVPage: React.FC<CCTVPageProps> = ({
   return (
     <div className="space-y-6 pb-24 animate-in fade-in">
       {/* Header & Filters */}
-      <div className="glass-panel rounded-2xl p-4 border border-white/10 flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-[#191A1D] rounded-2xl p-4 border border-[#383A3E] flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shadow-glow">
+          <div className="w-10 h-10 rounded-xl bg-[#111214] border border-[#383A3E] text-white flex items-center justify-center">
             <Video className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-extrabold text-white">Live Go2RTC CCTV Wall</h2>
-            <p className="text-xs text-slate-400">Zero-Latency WebRTC & MSE Multi-Stream Player</p>
+            <h2 className="text-base font-extrabold text-[#F5F5F5]">Live Go2RTC CCTV Wall</h2>
+            <p className="text-xs text-[#A6A6A6]">Zero-Latency WebRTC & High-Efficiency RTSP Multi-Stream Surveillance</p>
           </div>
         </div>
 
         {/* Filters */}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+            <Search className="w-3.5 h-3.5 text-[#777777] absolute left-3 top-2.5" />
             <input
               type="text"
               placeholder="Search cameras..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="glass-input rounded-xl pl-8 pr-3 py-1.5 text-xs text-white"
+              className="bg-[#111214] border border-[#383A3E] rounded-xl pl-8 pr-3 py-1.5 text-xs text-[#F5F5F5] placeholder-[#777777] focus:border-white/50 focus:outline-none"
             />
           </div>
 
           <select
             value={selectedFloorId}
             onChange={(e) => setSelectedFloorId(e.target.value)}
-            className="glass-input rounded-xl px-3 py-1.5 text-xs text-white"
+            className="bg-[#111214] border border-[#383A3E] rounded-xl px-3 py-1.5 text-xs text-[#F5F5F5] focus:border-white/50 focus:outline-none"
           >
-            <option value="all" className="bg-slate-900">All Zones & Floors</option>
+            <option value="all" className="bg-[#111214]">All Zones & Floors</option>
             {floors.map((f) => (
-              <option key={f.id} value={f.id} className="bg-slate-900">
+              <option key={f.id} value={f.id} className="bg-[#111214]">
                 {f.name}
               </option>
             ))}
@@ -75,15 +75,15 @@ export const CCTVPage: React.FC<CCTVPageProps> = ({
 
       {/* CCTV Grids */}
       {filteredCameras.length === 0 ? (
-        <div className="glass-panel rounded-2xl p-8 text-center border border-dashed border-white/10 space-y-3">
-          <Video className="w-10 h-10 text-cyan-400 mx-auto opacity-50" />
-          <h4 className="text-sm font-bold text-white">No cameras configured</h4>
-          <p className="text-xs text-slate-400">
+        <div className="bg-[#191A1D] rounded-2xl p-10 text-center border border-dashed border-[#383A3E] space-y-3">
+          <Video className="w-10 h-10 text-[#777777] mx-auto" />
+          <h4 className="text-sm font-bold text-[#F5F5F5]">No cameras configured</h4>
+          <p className="text-xs text-[#A6A6A6]">
             Add cameras or sync from Go2RTC server in Admin Studio.
           </p>
           <button
             onClick={onOpenAdmin}
-            className="px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 font-bold text-xs shadow-glow"
+            className="px-4 py-2 rounded-xl bg-white hover:bg-neutral-200 text-slate-950 font-bold text-xs shadow-sm transition-all"
           >
             Configure CCTV
           </button>
@@ -91,18 +91,18 @@ export const CCTVPage: React.FC<CCTVPageProps> = ({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredCameras.map((camera) => (
-            <div key={camera.id} className="aspect-video w-full">
+            <div key={camera.id} className="aspect-video w-full rounded-2xl overflow-hidden border border-[#383A3E] bg-[#111214]">
               {activeFullscreenCameraId === camera.id ? (
-                <div className="w-full h-full bg-slate-950/80 backdrop-blur-md rounded-2xl border border-cyan-500/30 flex flex-col items-center justify-center p-4 text-center">
-                  <Maximize2 className="w-6 h-6 text-cyan-400 animate-pulse mb-2" />
-                  <span className="text-xs font-semibold text-white">{camera.name}</span>
-                  <span className="text-[10px] text-cyan-400 font-mono mt-0.5">Streaming Fullscreen</span>
+                <div className="w-full h-full bg-[#111214] flex flex-col items-center justify-center p-4 text-center">
+                  <Maximize2 className="w-6 h-6 text-white animate-pulse mb-2" />
+                  <span className="text-xs font-semibold text-[#F5F5F5]">{camera.name}</span>
+                  <span className="text-[10px] text-[#22D68A] font-mono mt-0.5">Streaming Fullscreen</span>
                 </div>
               ) : (
                 <Go2rtcVideo
                   camera={camera}
                   onFullscreen={() => onOpenFullscreen(camera)}
-                  className="w-full h-full"
+                  className="w-full h-full object-cover"
                 />
               )}
             </div>

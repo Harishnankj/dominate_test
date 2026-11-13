@@ -1,110 +1,167 @@
-import React, { useState, lazy, Suspense } from 'react';
+import React, { useState, Suspense, lazy } from 'react';
 import {
-  Radio,
-  Lock,
-  Unlock,
-  Fan,
-  Star,
-  Battery,
-  CheckCircle2,
-  AlertCircle,
-  Wind,
-  Thermometer,
-  Droplets,
-  Zap,
-  Gauge,
   Activity,
-  RotateCw,
+  AlertTriangle,
+  Battery,
+  Droplets,
+  Eye,
+  Fan,
+  Gauge,
+  Lock,
   Power,
-  ShieldCheck,
+  RotateCw,
   Settings,
+  ShieldCheck,
+  Star,
+  Thermometer,
+  Unlock,
+  Wind,
+  Zap,
 } from 'lucide-react';
 import type { Device } from '../../types';
+import { useBootstrap } from '../../context/BootstrapContext';
 import { useEntity } from '../../context/MultiHubHomeAssistantProvider';
 import { useAuth } from '../../context/AuthContext';
-import { useBootstrap } from '../../context/BootstrapContext';
 import { ApiService } from '../../services/api';
 
 const LockDetailModal = lazy(() => import('./LockDetailModal'));
 
-
 export const PresenceSensorTile: React.FC<{ device: Device }> = ({ device }) => {
-  const { state, attributes } = useEntity(device.entity_id, device.ha_hub_id);
-  const isOccupied = state === 'on' || state === 'detected';
+  const { getZ2mState } = useBootstrap();
+  const { isFavorite, toggleFavorite } = useAuth();
+  const { state: haState } = useEntity(device.entity_id, device.ha_hub_id);
+
+  let devConfig: any = {};
+  try { devConfig = JSON.parse(device.config_json); } catch (_) {}
+  const z2mKey = device.z2m_friendly_name || devConfig.z2m_friendly_name || devConfig.z2m_ieee || device.name;
+  const liveState = getZ2mState(z2mKey) || {};
+
+  const occupancy = liveState.occupancy ?? liveState.presence ?? (haState === 'on');
+  const illuminance = liveState.illuminance_lux ?? liveState.illuminance;
+  const distance = liveState.target_distance ?? liveState.distance;
+  const lqi = liveState.linkquality;
 
   return (
-    <div className={`relative rounded-2xl p-4 transition-all tile-hover border ${
-      isOccupied
-        ? 'glass-panel-glow border-emerald-500/40 shadow-glow-emerald'
-        : 'glass-panel border-white/10 opacity-80'
+    <div className={`relative rounded-2xl p-4 transition-all duration-200 border ${
+      occupancy
+        ? 'bg-[#191A1D] border-[#22D68A]/50 shadow-[0_0_20px_rgba(34,214,138,0.12)]'
+        : 'bg-[#191A1D] border-[#383A3E] hover:border-[#4B4E54]'
     }`}>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
-          <div className={`relative w-11 h-11 rounded-xl flex items-center justify-center ${
-            isOccupied ? 'bg-emerald-500 text-slate-950 shadow-glow-emerald' : 'bg-slate-800 text-slate-400'
+          <div className={`w-11 h-11 rounded-xl flex items-center justify-center transition-colors ${
+            occupancy ? 'bg-[#22D68A] text-slate-950 font-bold' : 'bg-[#111214] border border-[#383A3E] text-[#A6A6A6]'
           }`}>
-            <Radio className="w-5 h-5" />
-            {isOccupied && <span className="absolute inset-0 rounded-xl border-2 border-emerald-400 animate-radar pointer-events-none" />}
+            <Eye className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="text-sm font-semibold text-white tracking-wide">{device.name}</h4>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className={`w-2 h-2 rounded-full ${isOccupied ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
-              <span className={`text-[10px] font-mono font-bold uppercase tracking-wider ${isOccupied ? 'text-emerald-400' : 'text-slate-400'}`}>
-                {isOccupied ? 'OCCUPIED' : 'CLEAR'}
+            <h4 className="text-sm font-semibold text-[#F5F5F5] tracking-wide">{device.name}</h4>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className={`inline-flex items-center gap-1.5 text-[10px] font-mono uppercase font-bold tracking-wider ${
+                occupancy ? 'text-[#22D68A]' : 'text-[#A6A6A6]'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${occupancy ? 'bg-[#22D68A] animate-pulse' : 'bg-[#777777]'}`} />
+                {occupancy ? 'OCCUPIED' : 'CLEAR'}
               </span>
+              {lqi !== undefined && (
+                <span className="text-[9px] font-mono text-[#777777]">LQI {lqi}</span>
+              )}
             </div>
           </div>
         </div>
 
-        <span className="text-[10px] font-mono text-slate-400">
-          {attributes.last_detected ? new Date(attributes.last_detected).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Live'}
-        </span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleFavorite(device.id);
+          }}
+          className={`p-1.5 rounded-lg transition-colors ${isFavorite(device.id) ? 'text-[#F0B94D]' : 'text-[#777777] hover:text-white'}`}
+          title="Toggle Favorite"
+        >
+          <Star className={`w-4 h-4 ${isFavorite(device.id) ? 'fill-current' : ''}`} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#383A3E]/60 text-xs font-mono">
+        <div className="bg-[#111214] rounded-lg p-2 border border-[#383A3E]/40">
+          <span className="text-[10px] text-[#A6A6A6] block">LIGHT LEVEL</span>
+          <span className="text-[#F5F5F5] font-bold">{illuminance !== undefined ? `${illuminance} Lux` : '--'}</span>
+        </div>
+        <div className="bg-[#111214] rounded-lg p-2 border border-[#383A3E]/40">
+          <span className="text-[10px] text-[#A6A6A6] block">DISTANCE</span>
+          <span className="text-[#F5F5F5] font-bold">{distance !== undefined ? `${distance} m` : '--'}</span>
+        </div>
       </div>
     </div>
   );
 };
 
 export const ExhaustFanTile: React.FC<{ device: Device }> = ({ device }) => {
-  const { state, callService } = useEntity(device.entity_id, device.ha_hub_id);
   const { isFavorite, toggleFavorite } = useAuth();
+  const { state, callService } = useEntity(device.entity_id, device.ha_hub_id);
+  const [loading, setLoading] = useState(false);
   const isOn = state === 'on';
 
-  const toggle = () => {
-    const domain = device.entity_id ? device.entity_id.split('.')[0] : 'switch';
-    callService(domain, isOn ? 'turn_off' : 'turn_on');
+  const toggle = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      if (device.entity_id) {
+        const domain = device.entity_id.split('.')[0] || 'fan';
+        await callService(domain, isOn ? 'turn_off' : 'turn_on', { entity_id: device.entity_id });
+      }
+    } catch (_) {}
+    finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div
-      onClick={toggle}
-      className={`relative rounded-2xl p-4 transition-all cursor-pointer tile-hover border select-none ${
-        isOn ? 'glass-panel-glow border-cyan-500/40' : 'glass-panel border-white/10 opacity-80'
-      }`}
-    >
+    <div className={`relative rounded-2xl p-4 transition-all duration-200 border ${
+      isOn
+        ? 'bg-[#191A1D] border-white/40 shadow-sm'
+        : 'bg-[#191A1D] border-[#383A3E] hover:border-[#4B4E54]'
+    }`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${
-            isOn ? 'bg-cyan-500 text-slate-950 shadow-glow' : 'bg-slate-800 text-slate-400'
+          <div className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
+            isOn ? 'bg-white text-slate-950 font-bold' : 'bg-[#111214] border border-[#383A3E] text-[#A6A6A6]'
           }`}>
-            <Fan className={`w-5 h-5 ${isOn ? 'animate-spin-slow' : ''}`} />
+            <Fan className={`w-5 h-5 ${isOn ? 'animate-spin' : ''}`} style={{ animationDuration: '3s' }} />
           </div>
           <div>
-            <h4 className="text-sm font-semibold text-white tracking-wide">{device.name}</h4>
-            <span className={`text-[10px] font-mono uppercase font-bold tracking-wider ${isOn ? 'text-cyan-400' : 'text-slate-500'}`}>
-              {isOn ? 'VENTILATING' : 'IDLE'}
-            </span>
+            <h4 className="text-sm font-semibold text-[#F5F5F5] tracking-wide">{device.name}</h4>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${isOn ? 'bg-[#22D68A]' : 'bg-[#777777]'}`} />
+              <span className={`text-[10px] font-mono uppercase font-bold tracking-wider ${isOn ? 'text-[#F5F5F5]' : 'text-[#777777]'}`}>
+                {isOn ? 'RUNNING' : 'IDLE'}
+              </span>
+            </div>
           </div>
         </div>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleFavorite(device.id);
-          }}
-          className={`p-1.5 rounded-lg ${isFavorite(device.id) ? 'text-amber-400' : 'text-slate-600'}`}
-        >
-          <Star className={`w-4 h-4 ${isFavorite(device.id) ? 'fill-current' : ''}`} />
-        </button>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => toggle()}
+            disabled={loading}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              isOn
+                ? 'bg-white text-slate-950 hover:bg-neutral-200'
+                : 'bg-[#202226] border border-[#383A3E] text-[#F5F5F5] hover:border-white/40'
+            }`}
+          >
+            {loading ? '...' : isOn ? 'Turn Off' : 'Turn On'}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleFavorite(device.id);
+            }}
+            className={`p-1.5 rounded-lg transition-colors ${isFavorite(device.id) ? 'text-[#F0B94D]' : 'text-[#777777] hover:text-white'}`}
+          >
+            <Star className={`w-4 h-4 ${isFavorite(device.id) ? 'fill-current' : ''}`} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -145,10 +202,10 @@ export const TtlockTile: React.FC<{ device: Device }> = ({ device }) => {
         const res = await ApiService.unlockTuyaDevice(tuyaId);
         if (res.ok) {
           setUnlocked(true);
-          setMsg(res.message || 'Door Locked & Secured (Outside handle is disengaged).');
+          setMsg(res.message || 'Door Unlocked');
           setTimeout(() => { setUnlocked(false); setMsg(null); }, 8000);
         } else {
-          setMsg(res.message || 'Failed');
+          setMsg(res.message || 'Unlock Failed');
         }
       } else {
         if (!lockId) return;
@@ -156,7 +213,7 @@ export const TtlockTile: React.FC<{ device: Device }> = ({ device }) => {
         if (res.ok) {
           setUnlocked(true);
           setMsg('Unlocked');
-          setTimeout(() => setUnlocked(false), 5000);
+          setTimeout(() => { setUnlocked(false); setMsg(null); }, 5000);
         } else {
           setMsg(res.message || 'Failed');
         }
@@ -168,40 +225,47 @@ export const TtlockTile: React.FC<{ device: Device }> = ({ device }) => {
     }
   };
 
-  const battDisp = battery !== null ? battery : 95;
+  const battDisp = battery !== null ? battery : 70;
 
   return (
     <>
-      <div className={`relative rounded-2xl p-4 transition-all tile-hover border ${
-        unlocked ? 'glass-panel-glow border-emerald-500/40 shadow-glow-emerald' : 'glass-panel border-white/10'
+      <div className={`relative rounded-2xl p-4 transition-all duration-200 border ${
+        unlocked
+          ? 'bg-[#191A1D] border-[#22D68A]/60 shadow-[0_0_24px_rgba(34,214,138,0.15)]'
+          : 'bg-[#191A1D] border-[#383A3E] hover:border-[#4B4E54]'
       }`}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
-            <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${
-              unlocked ? 'bg-emerald-500 text-slate-950 shadow-glow-emerald' : 'bg-slate-800 text-cyan-400'
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center transition-colors ${
+              unlocked
+                ? 'bg-[#22D68A] text-slate-950 font-bold'
+                : 'bg-[#111214] border border-[#383A3E] text-white'
             }`}>
               {unlocked ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
             </div>
             <div>
-              <h4 className="text-sm font-semibold text-white tracking-wide">{device.name}</h4>
+              <h4 className="text-sm font-semibold text-[#F5F5F5] tracking-wide">{device.name}</h4>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className={`text-[10px] font-mono uppercase font-bold tracking-wider ${unlocked ? 'text-emerald-400' : 'text-cyan-400'}`}>
+                <span className={`inline-flex items-center gap-1.5 text-[10px] font-mono uppercase font-bold tracking-wider ${
+                  unlocked ? 'text-[#22D68A]' : 'text-[#A6A6A6]'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${unlocked ? 'bg-[#22D68A] animate-pulse' : 'bg-[#22D68A]'}`} />
                   {unlocked ? 'ACCESS GRANTED' : 'SECURED'}
                 </span>
-                {msg && <span className="text-[10px] text-cyan-300">({msg})</span>}
+                {msg && <span className="text-[10px] text-[#A6A6A6] font-mono">({msg})</span>}
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 text-slate-400 text-xs font-mono">
-              <Battery className="w-3.5 h-3.5 text-emerald-400" /> {battDisp}%
+            <div className="flex items-center gap-1 text-[#A6A6A6] text-xs font-mono bg-[#111214] px-2 py-1 rounded-lg border border-[#383A3E]">
+              <Battery className="w-3.5 h-3.5 text-[#22D68A]" /> {battDisp}%
             </div>
             {isTuya && (
               <button
                 onClick={() => setShowModal(true)}
-                className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-cyan-400 transition-colors"
-                title="Open Lock Controls"
+                className="p-1.5 rounded-lg bg-[#202226] border border-[#383A3E] text-[#A6A6A6] hover:text-white hover:border-white/40 transition-colors"
+                title="Open Video Surveillance & Lock Controls"
               >
                 <Settings className="w-4 h-4" />
               </button>
@@ -212,10 +276,13 @@ export const TtlockTile: React.FC<{ device: Device }> = ({ device }) => {
         <button
           onClick={handleUnlock}
           disabled={loading}
-          className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-brand-600 hover:from-cyan-500 hover:to-brand-500 active:scale-95 text-white text-xs font-bold tracking-wider shadow-glow transition-all flex items-center justify-center gap-2"
+          className="w-full py-2.5 rounded-xl bg-white hover:bg-neutral-100 active:scale-[0.98] text-slate-950 text-xs font-bold tracking-wider shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-60"
         >
           {loading ? (
-            <span className="animate-spin text-white">⟳ Unlocking...</span>
+            <span className="flex items-center gap-2">
+              <span className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+              Unlocking...
+            </span>
           ) : (
             <><Unlock className="w-4 h-4" /> 1-Click Remote Unlock</>
           )}
@@ -234,7 +301,6 @@ export const TtlockTile: React.FC<{ device: Device }> = ({ device }) => {
     </>
   );
 };
-
 
 export const EnvironmentalSensorTile: React.FC<{ device: Device }> = ({ device }) => {
   const { getZ2mState } = useBootstrap();
@@ -256,31 +322,31 @@ export const EnvironmentalSensorTile: React.FC<{ device: Device }> = ({ device }
   const co2Num = typeof co2 === 'number' ? co2 : parseFloat(co2);
   const co2Level = !isNaN(co2Num)
     ? co2Num < 800
-      ? { label: 'OPTIMAL', color: 'text-emerald-400 bg-emerald-500/20 border-emerald-500/30' }
+      ? { label: 'OPTIMAL', color: 'text-[#22D68A] bg-[#22D68A]/10 border-[#22D68A]/30' }
       : co2Num < 1200
-      ? { label: 'MODERATE', color: 'text-amber-400 bg-amber-500/20 border-amber-500/30' }
-      : { label: 'POOR (VENTILATE)', color: 'text-rose-400 bg-rose-500/20 border-rose-500/30' }
+      ? { label: 'MODERATE', color: 'text-[#F0B94D] bg-[#F0B94D]/10 border-[#F0B94D]/30' }
+      : { label: 'POOR (VENTILATE)', color: 'text-[#FF5757] bg-[#FF5757]/10 border-[#FF5757]/30' }
     : null;
 
   return (
-    <div className="relative rounded-2xl p-4 glass-panel border border-white/10 tile-hover transition-all space-y-3">
+    <div className="relative rounded-2xl p-4 bg-[#191A1D] border border-[#383A3E] hover:border-[#4B4E54] transition-all space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shadow-glow">
+          <div className="w-11 h-11 rounded-xl bg-[#111214] border border-[#383A3E] text-white flex items-center justify-center">
             <Wind className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="text-sm font-semibold text-white tracking-wide">{device.name}</h4>
+            <h4 className="text-sm font-semibold text-[#F5F5F5] tracking-wide">{device.name}</h4>
             <div className="flex items-center gap-2 mt-0.5">
               {co2Level ? (
                 <span className={`px-2 py-0.5 rounded-md text-[9px] font-mono font-bold uppercase border ${co2Level.color}`}>
                   {co2Level.label}
                 </span>
               ) : (
-                <span className="text-[10px] font-mono text-cyan-400 uppercase font-bold">AIR MONITOR</span>
+                <span className="text-[10px] font-mono text-[#A6A6A6] uppercase font-bold">AIR MONITOR</span>
               )}
               {lqi !== undefined && (
-                <span className="text-[9px] font-mono text-slate-500">LQI {lqi}</span>
+                <span className="text-[9px] font-mono text-[#777777]">LQI {lqi}</span>
               )}
             </div>
           </div>
@@ -291,46 +357,46 @@ export const EnvironmentalSensorTile: React.FC<{ device: Device }> = ({ device }
             e.stopPropagation();
             toggleFavorite(device.id);
           }}
-          className={`p-1.5 rounded-lg ${isFavorite(device.id) ? 'text-amber-400' : 'text-slate-600'}`}
+          className={`p-1.5 rounded-lg transition-colors ${isFavorite(device.id) ? 'text-[#F0B94D]' : 'text-[#777777] hover:text-white'}`}
         >
           <Star className={`w-4 h-4 ${isFavorite(device.id) ? 'fill-current' : ''}`} />
         </button>
       </div>
 
       {/* Sensor Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-white/5">
-        <div className="bg-slate-900/60 rounded-xl p-2.5 border border-white/5">
-          <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-mono mb-0.5">
-            <Thermometer className="w-3 h-3 text-amber-400" /> TEMP
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-[#383A3E]/50">
+        <div className="bg-[#111214] rounded-xl p-2.5 border border-[#383A3E]/40">
+          <div className="flex items-center gap-1.5 text-[#A6A6A6] text-[10px] font-mono mb-0.5">
+            <Thermometer className="w-3 h-3 text-[#F0B94D]" /> TEMP
           </div>
-          <span className="text-xs font-mono font-bold text-white">
+          <span className="text-xs font-mono font-bold text-[#F5F5F5]">
             {temp !== undefined ? `${temp}°C` : '--'}
           </span>
         </div>
 
-        <div className="bg-slate-900/60 rounded-xl p-2.5 border border-white/5">
-          <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-mono mb-0.5">
-            <Droplets className="w-3 h-3 text-cyan-400" /> HUMIDITY
+        <div className="bg-[#111214] rounded-xl p-2.5 border border-[#383A3E]/40">
+          <div className="flex items-center gap-1.5 text-[#A6A6A6] text-[10px] font-mono mb-0.5">
+            <Droplets className="w-3 h-3 text-white" /> HUMIDITY
           </div>
-          <span className="text-xs font-mono font-bold text-white">
+          <span className="text-xs font-mono font-bold text-[#F5F5F5]">
             {humidity !== undefined ? `${humidity}%` : '--'}
           </span>
         </div>
 
-        <div className="bg-slate-900/60 rounded-xl p-2.5 border border-white/5">
-          <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-mono mb-0.5">
-            <Activity className="w-3 h-3 text-emerald-400" /> CO2
+        <div className="bg-[#111214] rounded-xl p-2.5 border border-[#383A3E]/40">
+          <div className="flex items-center gap-1.5 text-[#A6A6A6] text-[10px] font-mono mb-0.5">
+            <Activity className="w-3 h-3 text-[#22D68A]" /> CO2
           </div>
-          <span className="text-xs font-mono font-bold text-white">
+          <span className="text-xs font-mono font-bold text-[#F5F5F5]">
             {co2 !== undefined ? `${co2} ppm` : '--'}
           </span>
         </div>
 
-        <div className="bg-slate-900/60 rounded-xl p-2.5 border border-white/5">
-          <div className="flex items-center gap-1.5 text-slate-400 text-[10px] font-mono mb-0.5">
-            <Gauge className="w-3 h-3 text-purple-400" /> VOC / HCHO
+        <div className="bg-[#111214] rounded-xl p-2.5 border border-[#383A3E]/40">
+          <div className="flex items-center gap-1.5 text-[#A6A6A6] text-[10px] font-mono mb-0.5">
+            <Gauge className="w-3 h-3 text-slate-300" /> VOC / HCHO
           </div>
-          <span className="text-xs font-mono font-bold text-white">
+          <span className="text-xs font-mono font-bold text-[#F5F5F5]">
             {voc !== undefined ? `${voc} ppb` : formaldehyd !== undefined ? `${formaldehyd} µg` : '--'}
           </span>
         </div>
@@ -363,11 +429,9 @@ export const EnergyMeterTile: React.FC<{ device: Device }> = ({ device }) => {
     setToggling(true);
     const targetState = isOn ? 'OFF' : 'ON';
     try {
-      // 1. Try direct Z2M first
       if (z2mKey) {
         await setZ2mState(z2mKey, { state: targetState });
       }
-      // 2. Also try Home Assistant entity if mapped
       if (device.entity_id) {
         const domain = device.entity_id.split('.')[0] || 'switch';
         await callService(domain, isOn ? 'turn_off' : 'turn_on', { entity_id: device.entity_id }).catch(() => {});
@@ -379,24 +443,25 @@ export const EnergyMeterTile: React.FC<{ device: Device }> = ({ device }) => {
   };
 
   return (
-    <div className={`relative rounded-2xl p-4 transition-all tile-hover border space-y-3 ${
-      isOn ? 'glass-panel border-cyan-500/30' : 'glass-panel border-white/10 opacity-75'
+    <div className={`relative rounded-2xl p-4 transition-all duration-200 border space-y-3 ${
+      isOn ? 'bg-[#191A1D] border-[#383A3E]' : 'bg-[#191A1D] border-[#383A3E] opacity-75'
     }`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
-            isOn ? 'bg-amber-500 text-slate-950 shadow-glow' : 'bg-slate-800 text-slate-400'
+            isOn ? 'bg-white text-slate-950 font-bold' : 'bg-[#111214] border border-[#383A3E] text-[#777777]'
           }`}>
             <Zap className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="text-sm font-semibold text-white tracking-wide">{device.name}</h4>
+            <h4 className="text-sm font-semibold text-[#F5F5F5] tracking-wide">{device.name}</h4>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className={`text-[10px] font-mono uppercase font-bold tracking-wider ${isOn ? 'text-emerald-400' : 'text-slate-400'}`}>
+              <span className={`inline-flex items-center gap-1.5 text-[10px] font-mono uppercase font-bold tracking-wider ${isOn ? 'text-[#22D68A]' : 'text-[#777777]'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${isOn ? 'bg-[#22D68A]' : 'bg-[#777777]'}`} />
                 {isOn ? 'BREAKER ACTIVE' : 'BREAKER OFF'}
               </span>
               {liveState.linkquality !== undefined && (
-                <span className="text-[9px] font-mono text-slate-500">LQI {liveState.linkquality}</span>
+                <span className="text-[9px] font-mono text-[#777777]">LQI {liveState.linkquality}</span>
               )}
             </div>
           </div>
@@ -408,8 +473,8 @@ export const EnergyMeterTile: React.FC<{ device: Device }> = ({ device }) => {
             disabled={toggling}
             className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold border transition-all flex items-center gap-1.5 ${
               isOn
-                ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 hover:bg-rose-500/30'
-                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                ? 'bg-[#202226] text-[#FF5757] border-[#383A3E] hover:border-[#FF5757]/40'
+                : 'bg-white text-slate-950 border-white hover:bg-neutral-200'
             }`}
           >
             <Power className="w-3.5 h-3.5" />
@@ -420,7 +485,7 @@ export const EnergyMeterTile: React.FC<{ device: Device }> = ({ device }) => {
               e.stopPropagation();
               toggleFavorite(device.id);
             }}
-            className={`p-1.5 rounded-lg ${isFavorite(device.id) ? 'text-amber-400' : 'text-slate-600'}`}
+            className={`p-1.5 rounded-lg transition-colors ${isFavorite(device.id) ? 'text-[#F0B94D]' : 'text-[#777777] hover:text-white'}`}
           >
             <Star className={`w-4 h-4 ${isFavorite(device.id) ? 'fill-current' : ''}`} />
           </button>
@@ -428,31 +493,31 @@ export const EnergyMeterTile: React.FC<{ device: Device }> = ({ device }) => {
       </div>
 
       {/* Electrical Telemetry Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-white/5">
-        <div className="bg-slate-900/60 rounded-xl p-2.5 border border-white/5">
-          <span className="text-[10px] font-mono text-amber-400 block mb-0.5">POWER (W)</span>
-          <span className="text-sm font-mono font-bold text-white">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-[#383A3E]/50">
+        <div className="bg-[#111214] rounded-xl p-2.5 border border-[#383A3E]/40">
+          <span className="text-[10px] font-mono text-[#F0B94D] block mb-0.5">POWER (W)</span>
+          <span className="text-sm font-mono font-bold text-[#F5F5F5]">
             {power !== undefined ? `${power} W` : '--'}
           </span>
         </div>
 
-        <div className="bg-slate-900/60 rounded-xl p-2.5 border border-white/5">
-          <span className="text-[10px] font-mono text-cyan-400 block mb-0.5">VOLTAGE (V)</span>
-          <span className="text-sm font-mono font-bold text-white">
+        <div className="bg-[#111214] rounded-xl p-2.5 border border-[#383A3E]/40">
+          <span className="text-[10px] font-mono text-white block mb-0.5">VOLTAGE (V)</span>
+          <span className="text-sm font-mono font-bold text-[#F5F5F5]">
             {voltage !== undefined ? `${voltage} V` : '--'}
           </span>
         </div>
 
-        <div className="bg-slate-900/60 rounded-xl p-2.5 border border-white/5">
-          <span className="text-[10px] font-mono text-indigo-400 block mb-0.5">CURRENT (A)</span>
-          <span className="text-sm font-mono font-bold text-white">
+        <div className="bg-[#111214] rounded-xl p-2.5 border border-[#383A3E]/40">
+          <span className="text-[10px] font-mono text-slate-300 block mb-0.5">CURRENT (A)</span>
+          <span className="text-sm font-mono font-bold text-[#F5F5F5]">
             {current !== undefined ? `${current} A` : '--'}
           </span>
         </div>
 
-        <div className="bg-slate-900/60 rounded-xl p-2.5 border border-white/5">
-          <span className="text-[10px] font-mono text-emerald-400 block mb-0.5">TOTAL ENERGY</span>
-          <span className="text-sm font-mono font-bold text-white">
+        <div className="bg-[#111214] rounded-xl p-2.5 border border-[#383A3E]/40">
+          <span className="text-[10px] font-mono text-[#22D68A] block mb-0.5">TOTAL ENERGY</span>
+          <span className="text-sm font-mono font-bold text-[#F5F5F5]">
             {energy !== undefined ? `${energy} kWh` : '--'}
           </span>
         </div>
@@ -475,18 +540,18 @@ export const SmartKnobTile: React.FC<{ device: Device }> = ({ device }) => {
   const operationMode = liveState.operation_mode;
 
   return (
-    <div className="relative rounded-2xl p-4 glass-panel border border-white/10 tile-hover transition-all space-y-3">
+    <div className="relative rounded-2xl p-4 bg-[#191A1D] border border-[#383A3E] hover:border-[#4B4E54] transition-all space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center shadow-glow">
-            <RotateCw className="w-5 h-5 animate-spin-slow" />
+          <div className="w-11 h-11 rounded-xl bg-[#111214] border border-[#383A3E] text-white flex items-center justify-center">
+            <RotateCw className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="text-sm font-semibold text-white tracking-wide">{device.name}</h4>
+            <h4 className="text-sm font-semibold text-[#F5F5F5] tracking-wide">{device.name}</h4>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-[10px] font-mono text-purple-300 uppercase font-bold">SMART ROTARY KNOB</span>
+              <span className="text-[10px] font-mono text-[#A6A6A6] uppercase font-bold">SMART ROTARY KNOB</span>
               {action && (
-                <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[9px] font-mono uppercase font-bold animate-pulse">
+                <span className="px-2 py-0.5 rounded bg-white/10 text-white border border-white/20 text-[9px] font-mono uppercase font-bold">
                   {action}
                 </span>
               )}
@@ -496,8 +561,8 @@ export const SmartKnobTile: React.FC<{ device: Device }> = ({ device }) => {
 
         <div className="flex items-center gap-2">
           {battery !== undefined && (
-            <div className="flex items-center gap-1 text-slate-400 text-xs font-mono">
-              <Battery className="w-3.5 h-3.5 text-emerald-400" /> {battery}%
+            <div className="flex items-center gap-1 text-[#A6A6A6] text-xs font-mono bg-[#111214] px-2 py-1 rounded-lg border border-[#383A3E]">
+              <Battery className="w-3.5 h-3.5 text-[#22D68A]" /> {battery}%
             </div>
           )}
           <button
@@ -505,16 +570,16 @@ export const SmartKnobTile: React.FC<{ device: Device }> = ({ device }) => {
               e.stopPropagation();
               toggleFavorite(device.id);
             }}
-            className={`p-1.5 rounded-lg ${isFavorite(device.id) ? 'text-amber-400' : 'text-slate-600'}`}
+            className={`p-1.5 rounded-lg transition-colors ${isFavorite(device.id) ? 'text-[#F0B94D]' : 'text-[#777777] hover:text-white'}`}
           >
             <Star className={`w-4 h-4 ${isFavorite(device.id) ? 'fill-current' : ''}`} />
           </button>
         </div>
       </div>
 
-      <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60 border border-white/5 text-xs font-mono text-slate-400">
-        <span>Operation Mode: <strong className="text-slate-200">{operationMode || 'Command'}</strong></span>
-        <span>Last Trigger: <strong className="text-cyan-400">{action || 'Standby'}</strong></span>
+      <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#111214] border border-[#383A3E]/40 text-xs font-mono text-[#A6A6A6]">
+        <span>Operation Mode: <strong className="text-[#F5F5F5]">{operationMode || 'Command'}</strong></span>
+        <span>Last Trigger: <strong className="text-white">{action || 'Standby'}</strong></span>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layers, Briefcase, ChevronRight } from 'lucide-react';
+import { Layers, Briefcase, ChevronRight, Users, Sparkles } from 'lucide-react';
 import { useBootstrap } from '../context/BootstrapContext';
 import { useHA } from '../context/MultiHubHomeAssistantProvider';
 
@@ -9,6 +9,14 @@ interface ViewPageProps {
   onSelectRoom: (roomId: string) => void;
   onOpenAdmin: () => void;
 }
+
+const ROOM_PHOTOS: Record<string, string> = {
+  default: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=800&q=80',
+  executive: 'https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=800&q=80',
+  meeting: 'https://images.unsplash.com/photo-1517502884422-41eaead166d4?auto=format&fit=crop&w=800&q=80',
+  workspace: 'https://images.unsplash.com/photo-1524758631624-e2822e304c36?auto=format&fit=crop&w=800&q=80',
+  rd: 'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=800&q=80',
+};
 
 export const ViewPage: React.FC<ViewPageProps> = ({
   selectedFloorId,
@@ -26,17 +34,17 @@ export const ViewPage: React.FC<ViewPageProps> = ({
   return (
     <div className="space-y-6 pb-24 animate-in fade-in">
       {/* Floor Selection Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         {floors.map((floor) => {
           const isActive = floor.id === activeFloor?.id;
           return (
             <button
               key={floor.id}
               onClick={() => setSelectedFloorId(floor.id)}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 ${
                 isActive
-                  ? 'bg-gradient-to-r from-cyan-500 to-brand-600 text-white shadow-glow'
-                  : 'bg-slate-900/80 text-slate-400 hover:text-white border border-white/10'
+                  ? 'bg-white text-slate-950 shadow-sm'
+                  : 'bg-[#191A1D] text-[#A6A6A6] hover:text-white border border-[#383A3E]'
               }`}
             >
               <Layers className="w-4 h-4" />
@@ -48,12 +56,12 @@ export const ViewPage: React.FC<ViewPageProps> = ({
 
       {/* Floor Details Header */}
       {activeFloor && (
-        <div className="glass-panel rounded-2xl p-4 border border-white/10 flex items-center justify-between">
+        <div className="bg-[#191A1D] rounded-2xl p-5 border border-[#383A3E] flex items-center justify-between">
           <div>
-            <h3 className="text-base font-extrabold text-white">{activeFloor.name}</h3>
-            <p className="text-xs text-slate-400">{rooms.length} Rooms Configured</p>
+            <h3 className="text-base font-extrabold text-[#F5F5F5]">{activeFloor.name}</h3>
+            <p className="text-xs text-[#A6A6A6] mt-0.5">{rooms.length} Configured Architectural Rooms</p>
           </div>
-          <span className="px-2.5 py-1 rounded-lg bg-cyan-950/60 text-cyan-400 border border-cyan-800/40 font-mono text-xs">
+          <span className="px-3 py-1 rounded-lg bg-[#111214] text-[#F5F5F5] border border-[#383A3E] font-mono text-xs font-semibold">
             Zone: {activeFloor.slug}
           </span>
         </div>
@@ -61,13 +69,13 @@ export const ViewPage: React.FC<ViewPageProps> = ({
 
       {/* Room Cards Grid */}
       {rooms.length === 0 ? (
-        <div className="glass-panel rounded-2xl p-8 text-center border border-dashed border-white/10 space-y-3">
-          <Briefcase className="w-10 h-10 text-cyan-400 mx-auto opacity-50" />
-          <h4 className="text-sm font-bold text-white">No rooms in this floor</h4>
-          <p className="text-xs text-slate-400">Add rooms or run 1-Click Import in Admin Studio.</p>
+        <div className="bg-[#191A1D] rounded-2xl p-10 text-center border border-dashed border-[#383A3E] space-y-3">
+          <Briefcase className="w-10 h-10 text-[#777777] mx-auto" />
+          <h4 className="text-sm font-bold text-[#F5F5F5]">No rooms configured in this floor</h4>
+          <p className="text-xs text-[#A6A6A6]">Add rooms or import existing zones via Admin Studio.</p>
           <button
             onClick={onOpenAdmin}
-            className="px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 font-bold text-xs shadow-glow"
+            className="px-4 py-2 rounded-xl bg-white text-slate-950 font-bold text-xs shadow-sm hover:bg-neutral-200 transition-colors"
           >
             Open Admin Studio
           </button>
@@ -80,46 +88,63 @@ export const ViewPage: React.FC<ViewPageProps> = ({
             const presenceEntity = presenceDev?.entity_id ? getEntity(presenceDev.entity_id) : undefined;
             const isOccupied = presenceEntity?.state === 'on' || presenceEntity?.state === 'detected';
 
+            const photoKey = room.name.toLowerCase().includes('exec')
+              ? 'executive'
+              : room.name.toLowerCase().includes('meet')
+              ? 'meeting'
+              : room.name.toLowerCase().includes('r&d') || room.name.toLowerCase().includes('rd')
+              ? 'rd'
+              : room.name.toLowerCase().includes('work')
+              ? 'workspace'
+              : 'default';
+            const bgImage = ROOM_PHOTOS[photoKey] || ROOM_PHOTOS.default;
+
             return (
               <div
                 key={room.id}
                 onClick={() => onSelectRoom(room.id)}
-                className="glass-panel p-5 rounded-2xl border border-white/10 hover:border-cyan-500/40 tile-hover cursor-pointer space-y-3"
+                className="group relative rounded-2xl bg-[#191A1D] border border-[#383A3E] hover:border-white/50 transition-all cursor-pointer overflow-hidden shadow-sm flex flex-col"
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-slate-800 text-cyan-400 flex items-center justify-center">
-                      <Briefcase className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-white text-sm">{room.name}</h4>
-                      <span className="text-[10px] font-mono text-slate-400">
-                        {room.is_meeting_room ? 'Meeting Suite' : 'Workspace'}
+                {/* Architectural Photo Banner */}
+                <div className="relative h-32 w-full overflow-hidden bg-slate-950">
+                  <img
+                    src={bgImage}
+                    alt={room.name}
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 opacity-60"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#191A1D] via-[#191A1D]/40 to-transparent" />
+                  
+                  {presenceDev && (
+                    <div className="absolute top-3 right-3">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold backdrop-blur-md border ${
+                          isOccupied
+                            ? 'bg-[#22D68A]/20 text-[#22D68A] border-[#22D68A]/40'
+                            : 'bg-black/60 text-[#A6A6A6] border-white/10'
+                        }`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${isOccupied ? 'bg-[#22D68A] animate-pulse' : 'bg-[#777777]'}`} />
+                        {isOccupied ? 'OCCUPIED' : 'CLEAR'}
                       </span>
                     </div>
-                  </div>
-
-                  {presenceDev && (
-                    <span
-                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
-                        isOccupied ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
-                      }`}
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          isOccupied ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'
-                        }`}
-                      />
-                      {isOccupied ? 'OCCUPIED' : 'CLEAR'}
-                    </span>
                   )}
                 </div>
 
-                <div className="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-white/5">
-                  <span className="font-mono text-cyan-400">{roomDevices.length} Devices</span>
-                  <span className="flex items-center gap-1 text-slate-300 font-semibold group-hover:text-cyan-400">
-                    Control Room <ChevronRight className="w-4 h-4" />
-                  </span>
+                {/* Content */}
+                <div className="p-4 pt-1 flex-1 flex flex-col justify-between space-y-3">
+                  <div>
+                    <h4 className="font-bold text-[#F5F5F5] text-base group-hover:text-white transition-colors">{room.name}</h4>
+                    <span className="text-[11px] font-mono text-[#A6A6A6]">
+                      {room.is_meeting_room ? 'Executive Meeting Suite' : 'Workspace & Automation Zone'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-[#A6A6A6] pt-2 border-t border-[#383A3E]/60">
+                    <span className="font-mono text-white font-bold">{roomDevices.length} Devices</span>
+                    <span className="flex items-center gap-1 text-[#F5F5F5] font-semibold group-hover:translate-x-1 transition-transform">
+                      Enter Room <ChevronRight className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
                 </div>
               </div>
             );

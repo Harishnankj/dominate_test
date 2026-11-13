@@ -1181,19 +1181,19 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] max-w-4xl mx-auto space-y-4 pb-20 animate-in fade-in">
       {/* Assistant Header */}
-      <div className="glass-panel rounded-2xl p-4 border border-white/10 flex items-center justify-between shrink-0">
+      <div className="bg-[#191A1D] rounded-2xl p-4 border border-[#383A3E] flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white shadow-glow">
+          <div className="w-10 h-10 rounded-xl bg-white text-slate-950 flex items-center justify-center font-bold shadow-sm">
             <Sparkles className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+            <h2 className="text-sm font-bold text-[#F5F5F5] flex items-center gap-2">
               {assistantName} Voice &amp; Device Assistant
-              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-white/10 text-white border border-white/20">
                 LOCAL FIRST
               </span>
             </h2>
-            <p className="text-[10px] font-mono text-cyan-400">
+            <p className="text-[10px] font-mono text-[#A6A6A6]">
               Universal Control: Zigbee • Tuya Wi-Fi • TTLock • AC IR • HA
             </p>
           </div>
@@ -1205,10 +1205,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             onClick={requestMicPermission}
             className={`px-2.5 py-1 rounded-xl border text-[11px] font-mono font-semibold flex items-center gap-1.5 transition-all ${
               micPermissionState === 'granted'
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                ? 'bg-[#22D68A]/10 text-[#22D68A] border-[#22D68A]/30'
                 : micPermissionState === 'denied'
-                ? 'bg-rose-500/10 text-rose-400 border-rose-500/30 animate-pulse'
-                : 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
+                ? 'bg-[#FF5757]/10 text-[#FF5757] border-[#FF5757]/30 animate-pulse'
+                : 'bg-[#F0B94D]/10 text-[#F0B94D] border-[#F0B94D]/30 hover:bg-[#F0B94D]/20'
             }`}
             title={
               micPermissionState === 'granted'
@@ -1220,17 +1220,17 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           >
             {micPermissionState === 'granted' ? (
               <>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-[#22D68A] animate-pulse" />
                 <span className="hidden sm:inline">Mic Ready</span>
               </>
             ) : micPermissionState === 'denied' ? (
               <>
-                <MicOff className="w-3.5 h-3.5 text-rose-400" />
+                <MicOff className="w-3.5 h-3.5 text-[#FF5757]" />
                 <span className="hidden sm:inline">Mic Blocked</span>
               </>
             ) : (
               <>
-                <Mic className="w-3.5 h-3.5 text-amber-400" />
+                <Mic className="w-3.5 h-3.5 text-[#F0B94D]" />
                 <span className="hidden sm:inline">Enable Mic</span>
               </>
             )}
@@ -1239,7 +1239,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           {/* Language Toggle */}
           <button
             onClick={() => setLanguage(language === 'en-IN' ? 'ml-IN' : 'en-IN')}
-            className="px-2.5 py-1 rounded-xl bg-slate-900 border border-white/10 text-xs font-mono font-semibold text-cyan-400 flex items-center gap-1.5 transition-colors"
+            className="px-2.5 py-1 rounded-xl bg-[#111214] border border-[#383A3E] hover:border-white/40 text-xs font-mono font-semibold text-white flex items-center gap-1.5 transition-colors"
           >
             <Languages className="w-3.5 h-3.5" />
             {language === 'en-IN' ? 'English (en-IN)' : 'മലയാളം (ml-IN)'}
@@ -1250,8 +1250,8 @@ export const ChatPage: React.FC<ChatPageProps> = ({
             onClick={() => setSpeechEnabled(!speechEnabled)}
             className={`p-1.5 rounded-xl border transition-colors ${
               speechEnabled
-                ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
-                : 'bg-slate-900 text-slate-500 border-white/10'
+                ? 'bg-white text-slate-950 border-white'
+                : 'bg-[#111214] text-[#777777] border-[#383A3E]'
             }`}
             title={speechEnabled ? 'Mute Voice' : 'Enable Voice'}
           >
@@ -1262,19 +1262,19 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
       {/* Microphone Permission Prompt Banner */}
       {micPermissionState === 'prompt' && (
-        <div className="bg-gradient-to-r from-cyan-950/80 to-slate-900 border border-cyan-500/40 rounded-2xl p-3 flex items-center justify-between gap-3 text-xs text-slate-200 shrink-0">
+        <div className="bg-[#191A1D] border border-[#383A3E] rounded-2xl p-3 flex items-center justify-between gap-3 text-xs text-[#F5F5F5] shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-xl bg-[#111214] border border-[#383A3E] text-white flex items-center justify-center shrink-0">
               <Mic className="w-4 h-4 animate-bounce" />
             </div>
             <div>
-              <span className="font-bold text-white block">Microphone Voice Control for localhost</span>
-              <span className="text-[11px] text-slate-400 block">Click "Allow Microphone" to grant voice control permissions for all users on this localhost link.</span>
+              <span className="font-bold text-[#F5F5F5] block">Microphone Voice Control for localhost</span>
+              <span className="text-[11px] text-[#A6A6A6] block">Click "Allow Microphone" to grant voice control permissions for all users on this localhost link.</span>
             </div>
           </div>
           <button
             onClick={requestMicPermission}
-            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-400 to-brand-500 text-slate-950 font-bold text-xs shadow-glow hover:opacity-90 shrink-0"
+            className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-neutral-200 text-slate-950 font-bold text-xs shadow-sm shrink-0 transition-colors"
           >
             Allow Microphone
           </button>
@@ -1283,11 +1283,11 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
       {/* Microphone Denied Notice */}
       {micPermissionState === 'denied' && (
-        <div className="bg-rose-950/50 border border-rose-500/30 rounded-2xl p-3 flex items-center gap-3 text-xs text-rose-200 shrink-0">
-          <MicOff className="w-5 h-5 text-rose-400 shrink-0" />
+        <div className="bg-[#191A1D] border border-[#FF5757]/40 rounded-2xl p-3 flex items-center gap-3 text-xs text-[#FF5757] shrink-0">
+          <MicOff className="w-5 h-5 text-[#FF5757] shrink-0" />
           <div>
-            <span className="font-bold text-rose-300 block">Microphone is blocked in your browser</span>
-            <span className="text-[11px] text-rose-300/80 block">
+            <span className="font-bold block">Microphone is blocked in your browser</span>
+            <span className="text-[11px] text-[#A6A6A6] block">
               To allow voice commands: click the <strong>tune/lock icon</strong> on the left side of <code>localhost:5173</code> in the address bar &rarr; set <strong>Microphone</strong> to <strong>Allow</strong> &rarr; reload the page.
             </span>
           </div>
@@ -1296,52 +1296,50 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
       {/* Notice if accessing via insecure HTTP on a remote device */}
       {window.location.protocol !== 'https:' && !isLocalhost && (
-        <div className="bg-amber-950/50 border border-amber-500/40 rounded-2xl p-3 flex items-center justify-between gap-3 text-xs text-amber-200 shrink-0">
+        <div className="bg-[#191A1D] border border-[#F0B94D]/40 rounded-2xl p-3 flex items-center justify-between gap-3 text-xs text-[#F5F5F5] shrink-0">
           <div className="flex items-center gap-2.5">
-            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+            <Sparkles className="w-4 h-4 text-[#F0B94D] shrink-0" />
             <span>
-              <strong>Phone Voice Setup</strong>: Mobile browsers block microphone on HTTP. Tap to switch to the secure HTTPS link (tap Advanced &rarr; Proceed on warning).
+              <strong>Phone Voice Setup</strong>: Mobile browsers block microphone on HTTP. Tap to switch to the secure HTTPS link.
             </span>
           </div>
           <a
             href={`https://${window.location.hostname}:5174/assistant`}
-            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 font-bold text-xs shadow-glow hover:opacity-90 shrink-0"
+            className="px-3 py-1.5 rounded-xl bg-white hover:bg-neutral-200 text-slate-950 font-bold text-xs shadow-sm shrink-0 transition-colors"
           >
             Switch to HTTPS
           </a>
         </div>
       )}
 
-
-
       {/* Messages Timeline */}
-      <div className="flex-1 overflow-y-auto space-y-3 p-4 glass-panel rounded-2xl border border-white/10">
+      <div className="flex-1 overflow-y-auto space-y-3 p-4 bg-[#111214] rounded-2xl border border-[#383A3E]">
         {messages.map((msg) => (
           <div
             key={msg.id}
             className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
           >
             <div
-              className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs font-medium leading-relaxed shadow-md ${
+              className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs font-medium leading-relaxed shadow-sm ${
                 msg.sender === 'user'
-                  ? 'bg-gradient-to-r from-cyan-600 to-brand-600 text-white rounded-br-none'
-                  : 'bg-slate-900/90 text-slate-100 border border-white/10 rounded-bl-none space-y-2'
+                  ? 'bg-white text-slate-950 rounded-br-none font-semibold'
+                  : 'bg-[#191A1D] text-[#F5F5F5] border border-[#383A3E] rounded-bl-none space-y-2'
               }`}
             >
               <p>{msg.text}</p>
 
               {msg.actionTaken && (
                 <div className="flex items-center gap-2 pt-1">
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-950/80 text-[10px] font-mono text-cyan-300 border border-cyan-800/40">
-                    <CheckCircle2 className="w-3 h-3 text-cyan-400" /> {msg.actionTaken}
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#111214] text-[10px] font-mono text-[#22D68A] border border-[#383A3E]">
+                    <CheckCircle2 className="w-3 h-3 text-[#22D68A]" /> {msg.actionTaken}
                   </span>
                 </div>
               )}
 
               {msg.deviceCard && (
-                <div className="mt-2 p-2.5 bg-slate-950/70 rounded-xl border border-white/10 flex items-center justify-between gap-3">
+                <div className="mt-2 p-2.5 bg-[#111214] rounded-xl border border-[#383A3E] flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+                    <div className="w-7 h-7 rounded-lg bg-[#202226] text-white flex items-center justify-center">
                       {msg.deviceCard.type === 'energy_meter' ? (
                         <Zap className="w-3.5 h-3.5" />
                       ) : msg.deviceCard.type === 'environmental_sensor' ? (
@@ -1353,9 +1351,9 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                       )}
                     </div>
                     <div>
-                      <span className="font-bold text-white text-xs block">{msg.deviceCard.name}</span>
+                      <span className="font-bold text-[#F5F5F5] text-xs block">{msg.deviceCard.name}</span>
                       {msg.deviceCard.detail && (
-                        <span className="text-[10px] font-mono text-cyan-400 block">{msg.deviceCard.detail}</span>
+                        <span className="text-[10px] font-mono text-[#A6A6A6] block">{msg.deviceCard.detail}</span>
                       )}
                     </div>
                   </div>
@@ -1363,31 +1361,31 @@ export const ChatPage: React.FC<ChatPageProps> = ({
               )}
 
               {msg.cameraCard && (
-                <div className="mt-2.5 p-3 bg-slate-950/90 rounded-2xl border border-cyan-500/30 space-y-2.5 w-full min-w-[260px] sm:min-w-[340px] max-w-sm shadow-xl">
+                <div className="mt-2.5 p-3 bg-[#111214] rounded-2xl border border-[#383A3E] space-y-2.5 w-full min-w-[260px] sm:min-w-[340px] max-w-sm shadow-xl">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+                      <div className="w-7 h-7 rounded-xl bg-[#202226] text-white flex items-center justify-center">
                         <CameraIcon className="w-4 h-4" />
                       </div>
                       <div>
-                        <span className="font-bold text-white text-xs block">
+                        <span className="font-bold text-[#F5F5F5] text-xs block">
                           {msg.cameraCard.camera.name}
                         </span>
-                        <span className="text-[10px] font-mono text-cyan-400 flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                          {msg.cameraCard.camera.stream_id} • Live Visual
+                        <span className="text-[10px] font-mono text-[#22D68A] flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#22D68A] animate-pulse" />
+                          {msg.cameraCard.camera.stream_id} • Live Feed
                         </span>
                       </div>
                     </div>
                     {msg.cameraCard.camera.ptz_enabled ? (
-                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/40 flex items-center gap-1">
+                      <span className="text-[10px] font-mono text-[#22D68A] bg-[#22D68A]/10 px-2 py-0.5 rounded-full border border-[#22D68A]/30 flex items-center gap-1">
                         <Compass className="w-3 h-3" /> PTZ
                       </span>
                     ) : null}
                   </div>
 
                   {/* Live Go2RTC Video Player */}
-                  <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black border border-white/10 shadow-inner">
+                  <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black border border-[#383A3E]">
                     <Go2rtcVideo
                       camera={msg.cameraCard.camera}
                       className="w-full h-full object-cover"
@@ -1400,24 +1398,24 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                     {onOpenFullscreenCamera && (
                       <button
                         onClick={() => onOpenFullscreenCamera(msg.cameraCard!.camera)}
-                        className="flex-1 py-1.5 px-3 rounded-xl bg-gradient-to-r from-cyan-500/20 to-brand-500/20 hover:from-cyan-500/30 hover:to-brand-500/30 text-cyan-300 text-xs font-semibold flex items-center justify-center gap-1.5 border border-cyan-500/30 transition-all shadow-glow"
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-white hover:bg-neutral-200 text-slate-950 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
                       >
-                        <Maximize2 className="w-3.5 h-3.5 text-cyan-400" /> Fullscreen & PTZ
+                        <Maximize2 className="w-3.5 h-3.5 text-slate-950" /> Fullscreen & PTZ
                       </button>
                     )}
                     {onNavigateToTab && (
                       <button
                         onClick={() => onNavigateToTab('cctv')}
-                        className="py-1.5 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-semibold flex items-center justify-center gap-1.5 border border-white/10 transition-colors"
+                        className="py-1.5 px-3 rounded-xl bg-[#202226] hover:bg-[#282a2e] text-[#F5F5F5] text-xs font-semibold flex items-center justify-center gap-1.5 border border-[#383A3E] transition-colors"
                       >
-                        <Video className="w-3.5 h-3.5 text-purple-400" /> CCTV Wall
+                        <Video className="w-3.5 h-3.5 text-white" /> CCTV Wall
                       </button>
                     )}
                   </div>
                 </div>
               )}
             </div>
-            <span className="text-[9px] font-mono text-slate-500 mt-1 px-1">
+            <span className="text-[9px] font-mono text-[#777777] mt-1 px-1">
               {msg.timestamp}
             </span>
           </div>
@@ -1426,13 +1424,13 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       </div>
 
       {/* Chat Input & Mic Bar */}
-      <div className="flex items-center gap-2 glass-panel p-2 rounded-2xl border border-white/10 shrink-0">
+      <div className="flex items-center gap-2 bg-[#191A1D] p-2 rounded-2xl border border-[#383A3E] shrink-0">
         <button
           onClick={toggleMic}
           className={`p-3 rounded-xl transition-all ${
             isListening
-              ? 'bg-rose-500 text-white shadow-glow animate-pulse'
-              : 'bg-slate-800 hover:bg-slate-700 text-cyan-400'
+              ? 'bg-[#FF5757] text-white animate-pulse'
+              : 'bg-[#111214] border border-[#383A3E] hover:border-white/40 text-white'
           }`}
           title={isListening ? 'Stop listening' : 'Start speaking'}
         >
@@ -1453,13 +1451,13 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-          className="flex-1 glass-input rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500"
+          className="flex-1 bg-[#111214] border border-[#383A3E] rounded-xl px-4 py-2.5 text-xs text-[#F5F5F5] placeholder-[#777777] focus:border-white/50 focus:outline-none"
         />
 
         <button
           onClick={() => handleSendMessage()}
           disabled={!inputText.trim()}
-          className="p-3 rounded-xl bg-gradient-to-r from-cyan-400 to-brand-500 text-slate-950 font-bold shadow-glow disabled:opacity-40 active:scale-95 transition-all"
+          className="p-3 rounded-xl bg-white hover:bg-neutral-200 text-slate-950 font-bold shadow-sm disabled:opacity-40 active:scale-95 transition-all"
         >
           <Send className="w-4 h-4" />
         </button>

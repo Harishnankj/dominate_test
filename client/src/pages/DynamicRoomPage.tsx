@@ -59,13 +59,13 @@ export const DynamicRoomPage: React.FC<DynamicRoomPageProps> = ({ room, onBack, 
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-white/10"
+            className="p-2 rounded-xl bg-[#191A1D] hover:bg-[#202226] text-[#A6A6A6] hover:text-white border border-[#383A3E] transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h2 className="text-xl font-extrabold text-white tracking-wide">{room.name}</h2>
-            <p className="text-xs text-cyan-400 font-mono">
+            <h2 className="text-xl font-extrabold text-[#F5F5F5] tracking-wide">{room.name}</h2>
+            <p className="text-xs text-[#A6A6A6] font-mono mt-0.5">
               {devices.length} Devices Mapped • {room.is_meeting_room ? 'Conference Suite' : 'Office Zone'}
             </p>
           </div>
@@ -75,9 +75,9 @@ export const DynamicRoomPage: React.FC<DynamicRoomPageProps> = ({ room, onBack, 
           {devices.some((d) => d.type === 'switch_light' || d.type === 'dimmable_light') && (
             <button
               onClick={handleTurnOffRoomLights}
-              className="px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-xs font-semibold text-slate-300 border border-white/10 flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-xl bg-[#191A1D] hover:bg-[#202226] text-xs font-semibold text-[#F5F5F5] border border-[#383A3E] hover:border-white/30 flex items-center gap-1.5 transition-colors"
             >
-              <Power className="w-3.5 h-3.5 text-rose-400" />
+              <Power className="w-3.5 h-3.5 text-[#FF5757]" />
               <span className="hidden sm:inline">All Lights Off</span>
             </button>
           )}
@@ -86,15 +86,15 @@ export const DynamicRoomPage: React.FC<DynamicRoomPageProps> = ({ room, onBack, 
 
       {/* Device Tiles Grid */}
       {devices.length === 0 ? (
-        <div className="glass-panel rounded-2xl p-8 text-center border border-dashed border-white/10 space-y-3">
-          <Briefcase className="w-10 h-10 text-cyan-400 mx-auto opacity-60" />
-          <h3 className="text-sm font-bold text-white">No devices mapped in this room yet</h3>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto">
+        <div className="bg-[#191A1D] rounded-2xl p-10 text-center border border-dashed border-[#383A3E] space-y-3">
+          <Briefcase className="w-10 h-10 text-[#777777] mx-auto" />
+          <h3 className="text-sm font-bold text-[#F5F5F5]">No devices mapped in this room yet</h3>
+          <p className="text-xs text-[#A6A6A6] max-w-sm mx-auto">
             Devices for this room can be mapped and configured in Admin Studio.
           </p>
           <button
             onClick={onOpenAdmin}
-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/30 font-semibold text-xs inline-flex items-center gap-2 shadow-sm transition-all"
+            className="px-4 py-2 rounded-xl bg-white hover:bg-neutral-200 text-slate-950 font-bold text-xs inline-flex items-center gap-2 shadow-sm transition-all"
           >
             <Settings className="w-4 h-4" /> Open Admin Studio
           </button>
@@ -102,34 +102,43 @@ export const DynamicRoomPage: React.FC<DynamicRoomPageProps> = ({ room, onBack, 
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {devices.map((device) => {
-            switch (device.type) {
-              case 'dimmable_light':
-                return <DimmableLightTile key={device.id} device={device} />;
-              case 'switch_light':
-                return <SwitchLightTile key={device.id} device={device} />;
-              case 'ac_ir':
-                return <AcIrTile key={device.id} device={device} />;
-              case 'climate':
-                return <ClimateTile key={device.id} device={device} />;
-              case 'blinds_relay':
-                return <BlindsRelayTile key={device.id} device={device} />;
-              case 'cover':
-                return <CoverTile key={device.id} device={device} />;
-              case 'presence_sensor':
-                return <PresenceSensorTile key={device.id} device={device} />;
-              case 'exhaust_fan':
-                return <ExhaustFanTile key={device.id} device={device} />;
-              case 'ttlock':
-                return <TtlockTile key={device.id} device={device} />;
-              case 'environmental_sensor':
-                return <EnvironmentalSensorTile key={device.id} device={device} />;
-              case 'energy_meter':
-                return <EnergyMeterTile key={device.id} device={device} />;
-              case 'smart_knob':
-                return <SmartKnobTile key={device.id} device={device} />;
-              default:
-                return <SwitchLightTile key={device.id} device={device} />;
+            if (device.type === 'dimmable_light') {
+              return <DimmableLightTile key={device.id} device={device} />;
             }
+            if (device.type === 'switch_light') {
+              return <SwitchLightTile key={device.id} device={device} />;
+            }
+            if (device.type === 'ac_ir') {
+              return <AcIrTile key={device.id} device={device} />;
+            }
+            if (device.type === 'climate') {
+              return <ClimateTile key={device.id} device={device} />;
+            }
+            if (device.type === 'cover') {
+              return <CoverTile key={device.id} device={device} />;
+            }
+            if (device.type === 'blinds_relay') {
+              return <BlindsRelayTile key={device.id} device={device} />;
+            }
+            if (device.type === 'presence_sensor') {
+              return <PresenceSensorTile key={device.id} device={device} />;
+            }
+            if (device.type === 'exhaust_fan') {
+              return <ExhaustFanTile key={device.id} device={device} />;
+            }
+            if (device.type === 'ttlock') {
+              return <TtlockTile key={device.id} device={device} />;
+            }
+            if (device.type === 'environmental_sensor') {
+              return <EnvironmentalSensorTile key={device.id} device={device} />;
+            }
+            if (device.type === 'energy_meter') {
+              return <EnergyMeterTile key={device.id} device={device} />;
+            }
+            if (device.type === 'smart_knob') {
+              return <SmartKnobTile key={device.id} device={device} />;
+            }
+            return <SwitchLightTile key={device.id} device={device} />;
           })}
         </div>
       )}

@@ -227,10 +227,10 @@ export const DimmableLightTile: React.FC<DimmableLightTileProps> = ({ device }) 
   return (
     <>
       <div
-        className={`relative rounded-2xl p-4 transition-all tile-hover border ${
+        className={`relative rounded-2xl p-4 transition-all duration-200 border ${
           isOn
-            ? 'glass-panel-glow border-cyan-500/40'
-            : 'glass-panel border-white/10 opacity-80 hover:opacity-100'
+            ? 'bg-[#191A1D] border-white/40 shadow-sm'
+            : 'bg-[#191A1D] border-[#383A3E] hover:border-[#4B4E54]'
         }`}
       >
         {/* Header */}
@@ -241,37 +241,37 @@ export const DimmableLightTile: React.FC<DimmableLightTileProps> = ({ device }) 
               title={isOn ? 'Turn Light OFF' : 'Turn Light ON'}
               className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
                 isOn
-                  ? 'bg-gradient-to-tr from-cyan-500 to-sky-400 text-slate-950 shadow-glow scale-105'
-                  : 'bg-slate-800 text-slate-400 hover:text-white'
+                  ? 'bg-white text-slate-950 font-bold shadow-sm'
+                  : 'bg-[#111214] border border-[#383A3E] text-[#777777] hover:text-white'
               }`}
             >
               <Lightbulb className={`w-5 h-5 ${isOn ? 'fill-current' : ''}`} />
             </button>
             <div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                <h4 className="text-sm font-semibold text-white tracking-wide leading-tight">{device.name}</h4>
+                <h4 className="text-sm font-semibold text-[#F5F5F5] tracking-wide leading-tight">{device.name}</h4>
                 {isDirectZ2m && (
-                  <span title="Controlled directly via Zigbee2MQTT" className="text-[10px] text-emerald-400 flex items-center gap-0.5">
+                  <span title="Controlled directly via Zigbee2MQTT" className="text-[10px] text-[#22D68A] flex items-center gap-0.5">
                     <Radio className="w-2.5 h-2.5" />
                   </span>
                 )}
                 {isDirectTuya && (
-                  <span title="Controlled directly via Tuya / Wi-Fi" className="text-[10px] text-amber-400 flex items-center gap-0.5">
+                  <span title="Controlled directly via Tuya / Wi-Fi" className="text-[10px] text-[#F0B94D] flex items-center gap-0.5">
                     <Wifi className="w-2.5 h-2.5" />
                   </span>
                 )}
                 {hasControl('signal_lqi') && linkQuality !== undefined && (
-                  <span title={`Link Quality: ${linkQuality} / 255 LQI`} className="text-[10px] text-cyan-400/80 flex items-center gap-0.5 font-mono">
+                  <span title={`Link Quality: ${linkQuality} / 255 LQI`} className="text-[10px] text-[#777777] flex items-center gap-0.5 font-mono">
                     <Signal className="w-2.5 h-2.5" /> {linkQuality}
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className={`text-[10px] font-mono uppercase font-bold tracking-wider ${isOn ? 'text-cyan-400' : 'text-slate-500'}`}>
+                <span className={`text-[10px] font-mono uppercase font-bold tracking-wider ${isOn ? 'text-white' : 'text-[#777777]'}`}>
                   {isOn ? `${displayBrightness}% ON` : 'OFF'}
                 </span>
                 {hasControl('power_wattage') && isOn && (
-                  <span className="flex items-center gap-0.5 text-[10px] font-mono text-emerald-400">
+                  <span className="flex items-center gap-0.5 text-[10px] font-mono text-[#22D68A]">
                     <Zap className="w-2.5 h-2.5" /> {currentWatts}W
                   </span>
                 )}
@@ -285,7 +285,7 @@ export const DimmableLightTile: React.FC<DimmableLightTileProps> = ({ device }) 
               <button
                 onClick={() => setIsCustomizeOpen(true)}
                 title="Customize Controls for this device (Admin)"
-                className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-400 hover:bg-slate-800/60 transition-colors"
+                className="p-1.5 rounded-lg text-[#777777] hover:text-white hover:bg-white/5 transition-colors"
               >
                 <Sliders className="w-3.5 h-3.5" />
               </button>
@@ -296,7 +296,7 @@ export const DimmableLightTile: React.FC<DimmableLightTileProps> = ({ device }) 
               <button
                 onClick={() => setIsStudioOpen(true)}
                 title="Open Lighting Studio"
-                className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/60 transition-colors"
+                className="p-1.5 rounded-lg text-[#A6A6A6] hover:text-white hover:bg-white/5 transition-colors"
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
               </button>
@@ -305,7 +305,7 @@ export const DimmableLightTile: React.FC<DimmableLightTileProps> = ({ device }) 
             <button
               onClick={() => toggleFavorite(device.id)}
               className={`p-1.5 rounded-lg transition-colors ${
-                isFavorite(device.id) ? 'text-amber-400' : 'text-slate-600 hover:text-slate-400'
+                isFavorite(device.id) ? 'text-[#F0B94D]' : 'text-[#777777] hover:text-white'
               }`}
             >
               <Star className={`w-4 h-4 ${isFavorite(device.id) ? 'fill-current' : ''}`} />
@@ -315,15 +315,15 @@ export const DimmableLightTile: React.FC<DimmableLightTileProps> = ({ device }) 
 
         {/* Controls Section (Only visible when light is ON and controls are enabled) */}
         {hasAnyVisibleSliders && (
-          <div className="space-y-3 pt-2 border-t border-white/5 animate-in fade-in">
+          <div className="space-y-3 pt-2 border-t border-[#383A3E]/50 animate-in fade-in">
             {/* 1. Brightness Slider */}
             {hasControl('brightness') && (
               <div>
-                <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+                <div className="flex items-center justify-between text-xs text-[#A6A6A6] mb-1">
                   <span className="flex items-center gap-1">
-                    <SunMedium className="w-3.5 h-3.5 text-cyan-400" /> Brightness
+                    <SunMedium className="w-3.5 h-3.5 text-white" /> Brightness
                   </span>
-                  <span className="font-mono text-cyan-300 font-bold">{displayBrightness}%</span>
+                  <span className="font-mono text-white font-bold">{displayBrightness}%</span>
                 </div>
                 <input
                   type="range"
@@ -333,7 +333,7 @@ export const DimmableLightTile: React.FC<DimmableLightTileProps> = ({ device }) 
                   onChange={(e) => handleBrightnessChange(Number(e.target.value))}
                   onMouseUp={(e) => handleBrightnessCommit(Number(e.currentTarget.value))}
                   onTouchEnd={(e) => handleBrightnessCommit(Number(e.currentTarget.value))}
-                  className="w-full h-2 rounded-lg bg-slate-800 accent-cyan-400 cursor-pointer"
+                  className="w-full h-2 rounded-lg bg-[#111214] border border-[#383A3E] accent-white cursor-pointer"
                 />
 
                 {/* Optional Brightness Steps */}
@@ -343,10 +343,10 @@ export const DimmableLightTile: React.FC<DimmableLightTileProps> = ({ device }) 
                       <button
                         key={pct}
                         onClick={() => handleBrightnessCommit(pct)}
-                        className={`flex-1 py-0.5 rounded-md text-[10px] font-mono font-semibold transition-all ${
+                        className={`flex-1 py-1 rounded-md text-[10px] font-mono font-semibold transition-all ${
                           displayBrightness === pct
-                            ? 'bg-cyan-500/30 text-cyan-300 border border-cyan-500/50'
-                            : 'bg-slate-800/60 text-slate-400 hover:text-white hover:bg-slate-800'
+                            ? 'bg-white text-slate-950 font-bold shadow-sm'
+                            : 'bg-[#111214] border border-[#383A3E] text-[#A6A6A6] hover:text-white hover:border-white/30'
                         }`}
                       >
                         {pct}%

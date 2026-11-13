@@ -92,10 +92,10 @@ export const AcIrTile: React.FC<AcIrTileProps> = ({ device }) => {
 
   return (
     <div
-      className={`relative rounded-2xl p-4 transition-all tile-hover border ${
+      className={`relative rounded-2xl p-4 transition-all duration-200 border ${
         state.power
-          ? 'glass-panel-glow border-cyan-500/40 shadow-glow'
-          : 'glass-panel border-white/10 opacity-80 hover:opacity-100'
+          ? 'bg-[#191A1D] border-white/40 shadow-sm'
+          : 'bg-[#191A1D] border-[#383A3E] hover:border-[#4B4E54]'
       }`}
     >
       {/* Header */}
@@ -106,19 +106,20 @@ export const AcIrTile: React.FC<AcIrTileProps> = ({ device }) => {
             disabled={sending}
             className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
               state.power
-                ? 'bg-gradient-to-tr from-cyan-500 to-sky-400 text-slate-950 shadow-glow scale-105'
-                : 'bg-slate-800 text-slate-400 hover:text-white'
+                ? 'bg-white text-slate-950 font-bold shadow-sm'
+                : 'bg-[#111214] border border-[#383A3E] text-[#777777] hover:text-white'
             }`}
           >
             <Power className="w-5 h-5" />
           </button>
           <div>
-            <h4 className="text-sm font-semibold text-white tracking-wide leading-tight">{device.name}</h4>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className={`text-[10px] font-mono uppercase font-bold tracking-wider ${state.power ? 'text-cyan-400' : 'text-slate-500'}`}>
+            <h4 className="text-sm font-semibold text-[#F5F5F5] tracking-wide leading-tight">{device.name}</h4>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${state.power ? 'bg-[#22D68A]' : 'bg-[#777777]'}`} />
+              <span className={`text-[10px] font-mono uppercase font-bold tracking-wider ${state.power ? 'text-[#F5F5F5]' : 'text-[#777777]'}`}>
                 {state.power ? `${state.temp}°C • ${state.mode.toUpperCase()}` : 'OFF'}
               </span>
-              {sending && <RefreshCw className="w-3 h-3 text-cyan-400 animate-spin" />}
+              {sending && <RefreshCw className="w-3 h-3 text-white animate-spin ml-1" />}
             </div>
           </div>
         </div>
@@ -126,7 +127,7 @@ export const AcIrTile: React.FC<AcIrTileProps> = ({ device }) => {
         <button
           onClick={() => toggleFavorite(device.id)}
           className={`p-1.5 rounded-lg transition-colors ${
-            isFavorite(device.id) ? 'text-amber-400' : 'text-slate-600 hover:text-slate-400'
+            isFavorite(device.id) ? 'text-[#F0B94D]' : 'text-[#777777] hover:text-white'
           }`}
         >
           <Star className={`w-4 h-4 ${isFavorite(device.id) ? 'fill-current' : ''}`} />
@@ -134,12 +135,12 @@ export const AcIrTile: React.FC<AcIrTileProps> = ({ device }) => {
       </div>
 
       {/* Temperature Display & Controls */}
-      <div className="flex items-center justify-between bg-slate-900/60 rounded-xl p-3 border border-white/5 my-2">
+      <div className="flex items-center justify-between bg-[#111214] rounded-xl p-3 border border-[#383A3E]/50 my-2">
         <div className="flex flex-col">
-          <span className="text-[10px] font-mono text-slate-400 tracking-wider">SETPOINT</span>
+          <span className="text-[10px] font-mono text-[#A6A6A6] tracking-wider">SETPOINT</span>
           <span className="text-3xl font-extrabold font-mono text-white tracking-tight">
             {state.temp}
-            <span className="text-lg text-cyan-400 font-sans">°C</span>
+            <span className="text-lg text-[#A6A6A6] font-sans">°C</span>
           </span>
         </div>
 
@@ -148,14 +149,14 @@ export const AcIrTile: React.FC<AcIrTileProps> = ({ device }) => {
           <button
             onClick={() => adjustTemp(-1)}
             disabled={state.temp <= 16 || sending}
-            className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 disabled:opacity-40 text-slate-200 flex items-center justify-center font-bold text-lg border border-white/10"
+            className="w-10 h-10 rounded-xl bg-[#202226] hover:bg-[#282a2e] active:scale-95 disabled:opacity-40 text-white flex items-center justify-center font-bold text-lg border border-[#383A3E] transition-colors"
           >
             <ChevronDown className="w-5 h-5" />
           </button>
           <button
             onClick={() => adjustTemp(1)}
             disabled={state.temp >= 30 || sending}
-            className="w-10 h-10 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 disabled:opacity-40 text-slate-200 flex items-center justify-center font-bold text-lg border border-white/10"
+            className="w-10 h-10 rounded-xl bg-[#202226] hover:bg-[#282a2e] active:scale-95 disabled:opacity-40 text-white flex items-center justify-center font-bold text-lg border border-[#383A3E] transition-colors"
           >
             <ChevronUp className="w-5 h-5" />
           </button>
@@ -170,8 +171,8 @@ export const AcIrTile: React.FC<AcIrTileProps> = ({ device }) => {
             onClick={() => setTempDirect(t)}
             className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-all ${
               state.temp === t && state.power
-                ? 'bg-cyan-500 text-slate-950 font-bold shadow-glow'
-                : 'bg-slate-800/80 text-slate-400 hover:text-white border border-white/5'
+                ? 'bg-white text-slate-950 font-bold shadow-sm'
+                : 'bg-[#111214] text-[#A6A6A6] hover:text-white border border-[#383A3E]'
             }`}
           >
             {t}°
@@ -185,8 +186,8 @@ export const AcIrTile: React.FC<AcIrTileProps> = ({ device }) => {
           onClick={() => setMode('cool')}
           className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all ${
             state.mode === 'cool' && state.power
-              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-glow'
-              : 'bg-slate-800/60 text-slate-400 hover:text-white border border-white/5'
+              ? 'bg-white text-slate-950 font-bold shadow-sm'
+              : 'bg-[#111214] border border-[#383A3E] text-[#A6A6A6] hover:text-white'
           }`}
         >
           <Snowflake className="w-3.5 h-3.5" /> Cool
@@ -195,8 +196,8 @@ export const AcIrTile: React.FC<AcIrTileProps> = ({ device }) => {
           onClick={() => setMode('dry')}
           className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all ${
             state.mode === 'dry' && state.power
-              ? 'bg-sky-500/20 text-sky-300 border border-sky-500/50 shadow-glow'
-              : 'bg-slate-800/60 text-slate-400 hover:text-white border border-white/5'
+              ? 'bg-white text-slate-950 font-bold shadow-sm'
+              : 'bg-[#111214] border border-[#383A3E] text-[#A6A6A6] hover:text-white'
           }`}
         >
           <Droplets className="w-3.5 h-3.5" /> Dry
@@ -205,8 +206,8 @@ export const AcIrTile: React.FC<AcIrTileProps> = ({ device }) => {
           onClick={() => setMode('fan')}
           className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all ${
             state.mode === 'fan' && state.power
-              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/50 shadow-glow'
-              : 'bg-slate-800/60 text-slate-400 hover:text-white border border-white/5'
+              ? 'bg-white text-slate-950 font-bold shadow-sm'
+              : 'bg-[#111214] border border-[#383A3E] text-[#A6A6A6] hover:text-white'
           }`}
         >
           <Wind className="w-3.5 h-3.5" /> Fan
@@ -214,7 +215,7 @@ export const AcIrTile: React.FC<AcIrTileProps> = ({ device }) => {
       </div>
 
       {/* Fan Speed & Extras */}
-      <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/5">
+      <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#383A3E]/50">
         {/* Fan Speeds */}
         <div className="flex items-center gap-1">
           {(['auto', '1', '2', '3'] as const).map((spd) => (
@@ -223,8 +224,8 @@ export const AcIrTile: React.FC<AcIrTileProps> = ({ device }) => {
               onClick={() => setFan(spd)}
               className={`px-2 py-1 rounded-lg text-[10px] font-mono uppercase font-bold transition-all ${
                 state.fan === spd && state.power
-                  ? 'bg-cyan-500 text-slate-950 shadow-glow'
-                  : 'bg-slate-800 text-slate-400 hover:text-white'
+                  ? 'bg-white text-slate-950 font-bold'
+                  : 'bg-[#111214] border border-[#383A3E] text-[#A6A6A6] hover:text-white'
               }`}
             >
               {spd === 'auto' ? 'AUTO' : `F${spd}`}
@@ -236,20 +237,20 @@ export const AcIrTile: React.FC<AcIrTileProps> = ({ device }) => {
         <div className="flex items-center gap-1.5">
           <button
             onClick={toggleSwing}
-            className={`px-2 py-1 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-all ${
+            className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-all ${
               state.swing && state.power
-                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
-                : 'bg-slate-800 text-slate-400 hover:text-white'
+                ? 'bg-white text-slate-950 font-bold'
+                : 'bg-[#111214] border border-[#383A3E] text-[#A6A6A6] hover:text-white'
             }`}
           >
             Swing
           </button>
           <button
             onClick={toggleSaver}
-            className={`px-2 py-1 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-all ${
+            className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition-all ${
               state.saver && state.power
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                : 'bg-slate-800 text-slate-400 hover:text-white'
+                ? 'bg-[#22D68A]/20 text-[#22D68A] border border-[#22D68A]/40'
+                : 'bg-[#111214] border border-[#383A3E] text-[#A6A6A6] hover:text-white'
             }`}
           >
             <Leaf className="w-3 h-3" /> Eco

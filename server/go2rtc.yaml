@@ -37,4 +37,4 @@ streams:
   tuya_doorlock:
     - rtsps://echo:5PycxwPCdLWpJjHmADUSPJjxoYNjzSPJ@wework-6-ind.stream.iot-11.com:443/v1/d7c1f02594322e7d0dyyoy/dbqot2etkbg1gj9batog5OBR2Wq8CvjM?signInfo=OEV1dRk4hQa8kRa_f71xMvdXODmmGw8kK9ETyQN3vK-Ksg_fVSPxcYTsDt7fHwECb4WQOVmU0iMUmZSZuJeNLpgdo67TRGlwAca3-qP6K21s56CY6iu0BLI_61xpfSOnIBn-AqPhl19ukTZBeMUb_ngw8BvBgVMfJOdYP9ullQo
   tuya_doorlock_0dyyoy:
-    - rtsps://echo:o6RokPAopJsdKiKmTPcWwQuI8Sxvfei5@wework-7-ind.stream.iot-11.com:443/v1/d7c1f02594322e7d0dyyoy/dbqqhm0tf179mnu29f10H3NjJMniFh64?signInfo=5GNXbXaI-DXGAcZlgLmQZpado-ionJPnX9QbeMrTcfsws1QWs8dWYBUmCqVeRFIb7CGGGdE89p2JAhXqaSu1WxSMrn4isiF3IuuDeVYT7QYREmsZlOtHHoYfR9yegPLMw-X8w9QcAAc-r4TuLGGU3Are90yZV6Ey6A273Po3vQc
+    - rtsps://echo:Fjox7hoHI3EjXwJPXM7phmEEDA9b1qFr@wework-11-ind.stream.iot-11.com:443/v1/d7c1f02594322e7d0dyyoy/dbrani7mt0a27ltbroa0jcjTCNchJJ6e?signInfo=secXzXvm8AuMxh8sN14NlHCZOBnRDDcn6_5mD_XREA2ZrZwxWt13MLGeUvmZO7IkSQJrVg_F2TSnAbxe9JGqnTobN5MsUzzlWidx500tEsJJpI9Ny2ix1fE_vqbgpOC8GgSn7nhny7PVuWGu0D4Ee84y1pWNgMuhts548VLtVhc

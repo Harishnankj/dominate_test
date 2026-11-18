@@ -8,12 +8,15 @@ import { HomeKeyModal } from './components/navigation/HomeKeyModal';
 import { FirstRunWizard } from './components/wizard/FirstRunWizard';
 import { AdminStudioPage } from './components/admin/AdminStudioPage';
 
+import { DashboardPage } from './pages/DashboardPage';
 import { FavoritePage } from './pages/FavoritePage';
 import { ViewPage } from './pages/ViewPage';
 import { DynamicRoomPage } from './pages/DynamicRoomPage';
 import { CCTVPage } from './pages/CCTVPage';
 import { CameraFullscreenPage } from './pages/CameraFullscreenPage';
 import { ScenesPage } from './pages/ScenesPage';
+import { AutomationsPage } from './pages/AutomationsPage';
+import { EnergyPage } from './pages/EnergyPage';
 import { ChatPage } from './pages/ChatPage';
 import { LockTestingPage } from './pages/LockTestingPage';
 
@@ -23,7 +26,7 @@ export const App: React.FC = () => {
   const { isSetupCompleted, loading: authLoading } = useAuth();
   const { data, loading: bootstrapLoading, getRoom } = useBootstrap();
 
-  const [currentTab, setCurrentTab] = useState<string>('favorites');
+  const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [selectedFloorId, setSelectedFloorId] = useState<string>('');
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [fullscreenCamera, setFullscreenCamera] = useState<Camera | null>(null);
@@ -62,7 +65,7 @@ export const App: React.FC = () => {
 
   // If initial setup has not been completed, launch First-Run Wizard
   if (!isSetupCompleted || data?.config.setup_completed === 0 || data?.user_count === 0) {
-    return <FirstRunWizard onComplete={() => setCurrentTab('favorites')} />;
+    return <FirstRunWizard onComplete={() => setCurrentTab('dashboard')} />;
   }
 
   const selectedRoom: Room | undefined = selectedRoomId ? getRoom(selectedRoomId) : undefined;
@@ -81,6 +84,7 @@ export const App: React.FC = () => {
             setCurrentTab(tab);
           }}
           onOpenAdmin={handleOpenAdmin}
+          adminStudioOpen={adminStudioOpen}
         />
       </div>
 
@@ -103,6 +107,7 @@ export const App: React.FC = () => {
                 setMobileSidebarOpen(false);
                 handleOpenAdmin(tab);
               }}
+              adminStudioOpen={adminStudioOpen}
             />
           </div>
         </div>
@@ -118,7 +123,11 @@ export const App: React.FC = () => {
             setCurrentTab(tab);
           }}
           selectedFloorId={selectedFloorId}
-          setSelectedFloorId={setSelectedFloorId}
+          setSelectedFloorId={(floorId) => {
+            setSelectedFloorId(floorId);
+            setSelectedRoomId(null);
+            setCurrentTab('view');
+          }}
           onOpenAdmin={handleOpenAdmin}
           onToggleMobileSidebar={() => setMobileSidebarOpen(!mobileSidebarOpen)}
         />
@@ -133,12 +142,21 @@ export const App: React.FC = () => {
             />
           ) : (
             <>
+              {currentTab === 'dashboard' && (
+                <DashboardPage
+                  onSelectRoom={(roomId) => setSelectedRoomId(roomId)}
+                  onOpenAdmin={handleOpenAdmin}
+                  onNavigateToRooms={() => setCurrentTab('view')}
+                  onNavigateToFavorites={() => setCurrentTab('favorites')}
+                  onOpenFullscreenCamera={(cam) => setFullscreenCamera(cam)}
+                />
+              )}
+
               {currentTab === 'favorites' && (
                 <FavoritePage
                   onSelectRoom={(roomId) => setSelectedRoomId(roomId)}
                   onOpenAdmin={handleOpenAdmin}
                   onNavigateToRooms={() => setCurrentTab('view')}
-                  onOpenFullscreenCamera={(cam) => setFullscreenCamera(cam)}
                 />
               )}
 
@@ -159,8 +177,18 @@ export const App: React.FC = () => {
                 />
               )}
 
-              {(currentTab === 'scenes' || currentTab === 'automations') && (
-                <ScenesPage onOpenAdmin={() => handleOpenAdmin('automations')} />
+              {currentTab === 'scenes' && (
+                <ScenesPage
+                  onOpenAdmin={() => handleOpenAdmin('automations')}
+                  onNavigateToAutomations={() => setCurrentTab('automations')}
+                />
+              )}
+
+              {currentTab === 'automations' && (
+                <AutomationsPage
+                  onOpenAdmin={() => handleOpenAdmin('automations')}
+                  onNavigateToScenes={() => setCurrentTab('scenes')}
+                />
               )}
 
               {currentTab === 'chat' && (
@@ -184,13 +212,11 @@ export const App: React.FC = () => {
                 />
               )}
 
-              {/* Energy monitoring tab navigates to Dashboard Energy section */}
+              {/* Dedicated Energy & Power Analytics View */}
               {currentTab === 'energy' && (
-                <FavoritePage
-                  onSelectRoom={(roomId) => setSelectedRoomId(roomId)}
-                  onOpenAdmin={handleOpenAdmin}
+                <EnergyPage
+                  onOpenAdmin={() => handleOpenAdmin('settings')}
                   onNavigateToRooms={() => setCurrentTab('view')}
-                  onOpenFullscreenCamera={(cam) => setFullscreenCamera(cam)}
                 />
               )}
 

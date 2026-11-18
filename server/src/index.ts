@@ -5,7 +5,7 @@ import fs from 'fs';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 
 import { initDatabase } from './db/index.js';
 import { liveSync } from './websocket/liveSync.js';
@@ -76,12 +76,55 @@ liveSync.init(liveSyncWss);
 // B. Home Assistant WebSocket Proxy (/ha-ws/:hubId)
 setupHaWebSocketProxy(server);
 
+// C. Go2RTC WebSocket Proxy (/api/ws)
+const go2rtcWss = new WebSocketServer({ noServer: true });
+
 // Central upgrade handler for non-ha-ws upgrades
 server.on('upgrade', (request, socket, head) => {
   const pathname = request.url?.split('?')[0];
   if (pathname === '/api/live-sync' || pathname === '/live-sync') {
     liveSyncWss.handleUpgrade(request, socket, head, (ws) => {
       liveSyncWss.emit('connection', ws, request);
+    });
+  } else if (pathname === '/api/ws') {
+    go2rtcWss.handleUpgrade(request, socket, head, (clientWs) => {
+      const targetUrl = `ws://127.0.0.1:1984${request.url}`;
+      const targetWs = new WebSocket(targetUrl);
+
+      const pendingQueue: { data: any; isBinary: boolean }[] = [];
+
+      clientWs.on('message', (data, isBinary) => {
+        if (targetWs.readyState === WebSocket.OPEN) {
+          targetWs.send(data, { binary: isBinary });
+        } else if (targetWs.readyState === WebSocket.CONNECTING) {
+          pendingQueue.push({ data, isBinary });
+        }
+      });
+
+      targetWs.on('open', () => {
+        while (pendingQueue.length > 0) {
+          const item = pendingQueue.shift();
+          if (item) {
+            targetWs.send(item.data, { binary: item.isBinary });
+          }
+        }
+      });
+
+      targetWs.on('message', (data, isBinary) => {
+        if (clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(data, { binary: isBinary });
+        }
+      });
+
+      const cleanup = () => {
+        try { targetWs.close(); } catch (_) {}
+        try { clientWs.close(); } catch (_) {}
+      };
+
+      clientWs.on('close', cleanup);
+      clientWs.on('error', cleanup);
+      targetWs.on('close', cleanup);
+      targetWs.on('error', cleanup);
     });
   }
 });
@@ -143,4 +186,17 @@ server.listen(PORT, () => {
 
   // Start HTTPS Gateway for mobile phones (port 5174 -> port 5173)
   startHttpsGateway(5174, 5173);
+
+  // Start port 80 redirect so entering bare IP http://192.168.0.87 in mobile browser routes to port 5173
+  try {
+    const port80Server = http.createServer((req, res) => {
+      const host = req.headers.host?.split(':')[0] || '192.168.0.87';
+      res.writeHead(302, { Location: `http://${host}:5173${req.url || '/'}` });
+      res.end();
+    });
+    port80Server.on('error', () => {});
+    port80Server.listen(80, '0.0.0.0', () => {
+      console.log('[PORT 80 GATEWAY] Redirecting http://192.168.0.87 -> http://192.168.0.87:5173');
+    });
+  } catch (_) {}
 });

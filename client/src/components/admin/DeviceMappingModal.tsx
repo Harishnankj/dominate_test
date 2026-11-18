@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Search, Check, Cpu, Plus, Sparkles, Sliders, Radio, SunMedium, Flame, Percent, Zap, SlidersHorizontal, Palette, Signal, Wifi } from 'lucide-react';
 import type { Device, DeviceType, HaHub, IrProfile, Room } from '../../types';
 import { ApiService } from '../../services/api';
+import { useBootstrap } from '../../context/BootstrapContext';
 import { DIMMABLE_LIGHT_CONTROLS, DEFAULT_ENABLED_LIGHT_CONTROLS } from '../devices/deviceControlConfigs';
 
 interface DeviceMappingModalProps {
@@ -27,16 +28,28 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
   initialDevice,
   onOpenIrEditor,
 }) => {
+  const { z2mDevices } = useBootstrap();
   const [targetRoomId, setTargetRoomId] = useState<string>(initialDevice?.room_id || roomId || (rooms[0]?.id || ''));
   const [selectedHubId, setSelectedHubId] = useState<string>(initialDevice?.ha_hub_id || hubs[0]?.id || '');
   const [deviceType, setDeviceType] = useState<DeviceType>(initialDevice?.type || 'switch_light');
   const [name, setName] = useState(initialDevice?.name || '');
   const [selectedEntityId, setSelectedEntityId] = useState(initialDevice?.entity_id || '');
   const [z2mFriendlyName, setZ2mFriendlyName] = useState(initialDevice?.z2m_friendly_name || '');
+  const [z2mEndpoint, setZ2mEndpoint] = useState('');
   const [tuyaDeviceId, setTuyaDeviceId] = useState(initialDevice?.tuya_device_id || '');
   const [tuyaLocalKey, setTuyaLocalKey] = useState(initialDevice?.tuya_local_key || '');
   const [tuyaIp, setTuyaIp] = useState(initialDevice?.tuya_ip || '');
   const [showOnDashboard, setShowOnDashboard] = useState(initialDevice?.show_on_default_dashboard === 1);
+
+  const matchedZ2mDev = z2mDevices.find(
+    (d) => d.friendly_name === z2mFriendlyName || d.ieee_address === z2mFriendlyName
+  );
+  const switchExposes = (matchedZ2mDev?.definition?.exposes || []).filter(
+    (e: any) =>
+      e.type === 'switch' ||
+      e.name === 'state' ||
+      e.features?.some((f: any) => f.name === 'state')
+  );
 
   // Config fields
   const [maxWattage, setMaxWattage] = useState(18);
@@ -67,6 +80,8 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
 
       try {
         const cfg = JSON.parse(initialDevice.config_json || '{}');
+        if (cfg.endpoint) setZ2mEndpoint(cfg.endpoint);
+        else setZ2mEndpoint('');
         if (cfg.max_wattage) setMaxWattage(cfg.max_wattage);
         if (cfg.enabled_controls && Array.isArray(cfg.enabled_controls)) {
           setEnabledControls(cfg.enabled_controls);
@@ -83,6 +98,7 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
       setTargetRoomId(roomId || (rooms[0]?.id || ''));
       setName('');
       setSelectedEntityId('');
+      setZ2mEndpoint('');
       setEnabledControls(DEFAULT_ENABLED_LIGHT_CONTROLS);
     }
   }, [initialDevice, hubs, roomId, rooms]);
@@ -144,7 +160,9 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
       return;
     }
 
-    const config: Record<string, any> = {};
+    let initialConfig: any = {};
+    try { initialConfig = JSON.parse(initialDevice?.config_json || '{}'); } catch (_) {}
+    const config: Record<string, any> = { ...initialConfig };
     if (deviceType === 'dimmable_light') {
       config.max_wattage = maxWattage;
       config.enabled_controls = enabledControls;
@@ -160,6 +178,12 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
         config.tuya_device_id = tuyaDeviceId;
         config.isTuyaLock = true;
       }
+    }
+
+    if (z2mEndpoint) {
+      config.endpoint = z2mEndpoint;
+    } else {
+      delete config.endpoint;
     }
 
     await onSave({
@@ -339,6 +363,48 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
             <p className="text-[10px] text-slate-400 leading-relaxed">
               If Home Assistant goes down, this device continues working seamlessly over local MQTT.
             </p>
+
+            {switchExposes.length > 1 && (
+              <div className="pt-2 border-t border-white/5 space-y-1.5">
+                <label className="text-[11px] font-semibold text-cyan-300 block">
+                  Switch Gang / Endpoint (Multi-Gang Panel)
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setZ2mEndpoint('')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-mono transition-all text-left border ${
+                      !z2mEndpoint
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-bold'
+                        : 'bg-slate-800 text-slate-400 border-white/5 hover:text-white'
+                    }`}
+                  >
+                    All Gangs (Master)
+                  </button>
+                  {switchExposes.map((se: any, idx: number) => {
+                    const ep = se.endpoint || `l${idx + 1}`;
+                    const label = `Gang ${idx + 1} (${ep})`;
+                    return (
+                      <button
+                        key={ep}
+                        type="button"
+                        onClick={() => setZ2mEndpoint(ep)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-mono transition-all text-left border ${
+                          z2mEndpoint === ep
+                            ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-bold'
+                            : 'bg-slate-800 text-slate-400 border-white/5 hover:text-white'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Select whether this tile controls one specific gang or all gangs on the smart panel.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Direct Tuya & Wi-Fi Parameters */}

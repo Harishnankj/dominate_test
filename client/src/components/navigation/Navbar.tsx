@@ -4,11 +4,9 @@ import {
   Wifi,
   WifiOff,
   CloudSun,
-  Settings,
   LogOut,
   User,
   KeyRound,
-  Layers,
   ChevronDown,
   Radio,
   Sliders,
@@ -22,8 +20,8 @@ import { ApiService } from '../../services/api';
 interface NavbarProps {
   currentTab: string;
   setCurrentTab: (tab: string) => void;
-  selectedFloorId: string;
-  setSelectedFloorId: (floorId: string) => void;
+  selectedFloorId?: string;
+  setSelectedFloorId?: (floorId: string) => void;
   onOpenAdmin: (tab?: any) => void;
   onToggleMobileSidebar?: () => void;
 }
@@ -31,8 +29,6 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({
   currentTab,
   setCurrentTab,
-  selectedFloorId,
-  setSelectedFloorId,
   onOpenAdmin,
   onToggleMobileSidebar,
 }) => {
@@ -62,7 +58,6 @@ export const Navbar: React.FC<NavbarProps> = ({
       .catch(() => {});
   }, []);
 
-  const floors = data?.floors || [];
   const buildingName = data?.config?.building_name || 'DOMINATE';
 
   return (
@@ -82,7 +77,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <div
             className="flex items-center gap-2 cursor-pointer md:cursor-default"
-            onClick={() => setCurrentTab('favorites')}
+            onClick={() => setCurrentTab('dashboard')}
           >
             <div className="md:hidden w-8 h-8 rounded-lg bg-white text-[#090A0C] flex items-center justify-center font-extrabold text-sm">
               D
@@ -147,42 +142,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Right Side: Floor Dropdown, Weather, Admin Studio, Profile */}
+        {/* Right Side: Weather, Admin Studio, Profile */}
         <div className="flex items-center gap-2.5">
-          {/* Floor Selection Dropdown */}
-          {floors.length > 0 && (
-            <div className="flex items-center bg-[#191A1D] border border-[#383A3E] rounded-xl px-2.5 py-1 text-xs">
-              <Layers className="w-3.5 h-3.5 text-[#777777] mr-1.5" />
-              <select
-                value={selectedFloorId}
-                onChange={(e) => setSelectedFloorId(e.target.value)}
-                className="bg-transparent text-[#F5F5F5] font-medium text-xs border-0 outline-none cursor-pointer pr-1"
-              >
-                {floors.map((f) => (
-                  <option key={f.id} value={f.id} className="bg-[#191A1D] text-[#F5F5F5]">
-                    {f.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
           {/* Weather Pill */}
           <div className="hidden sm:flex items-center gap-1.5 bg-[#191A1D] border border-[#383A3E] rounded-xl px-3 py-1.5 text-xs text-[#A6A6A6]">
             <CloudSun className="w-3.5 h-3.5 text-white" />
             <span className="font-mono text-[#F5F5F5] font-semibold">{weather.temp}°C</span>
             <span className="text-[10px] text-[#777777]">({weather.label})</span>
           </div>
-
-          {/* Admin Studio Button */}
-          <button
-            onClick={() => onOpenAdmin('hubs')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#191A1D] hover:bg-[#202226] text-[#F5F5F5] border border-[#383A3E] hover:border-white/40 text-xs font-medium transition-all shadow-sm"
-            title="Open Admin Studio"
-          >
-            <Sliders className="w-3.5 h-3.5 text-white" />
-            <span className="hidden md:inline">Admin Studio</span>
-          </button>
 
           {/* User Profile Menu */}
           <div className="relative">
@@ -210,12 +177,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <button
                     onClick={() => {
                       setShowUserMenu(false);
-                      onOpenAdmin('settings');
+                      onOpenAdmin();
                     }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#A6A6A6] hover:text-[#F5F5F5] hover:bg-[#202226] rounded-lg transition-colors"
                   >
-                    <Settings className="w-3.5 h-3.5 text-[#777777]" />
-                    <span>System Settings</span>
+                    <Sliders className="w-3.5 h-3.5 text-[#777777]" />
+                    <span>Admin Studio</span>
                   </button>
 
                   <button

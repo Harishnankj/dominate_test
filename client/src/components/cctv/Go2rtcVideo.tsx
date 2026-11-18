@@ -36,24 +36,32 @@ export const Go2rtcVideo: React.FC<Go2rtcVideoProps> = ({
 }) => {
   const { data } = useBootstrap();
 
-  const streamId = camera.stream_id;
+  // Select stream: use high-res full_stream_id only if isMainStream is true AND full_stream_id exists;
+  // otherwise default to camera.stream_id (fast, ultra-low-latency, zero-packet-drop sub-stream)
+  const streamId = (isMainStream && camera.full_stream_id) ? camera.full_stream_id : (camera.stream_id || 'cam1');
 
-  // Resolves the WebSocket URL: uses same-origin /api/ws proxy (seamless on localhost, remote IP, and mobile HTTPS)
+  // Resolves the WebSocket URL:
+  // Connects directly to Go2RTC port 1984 (ultra-fast, zero-proxy delay, zero ECONNRESET)
   const wsUrl = useMemo(() => {
-    // If an explicit external Go2RTC base URL is configured in building_config, respect it
+    if (typeof window === 'undefined') return '';
+    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let host = window.location.hostname || '127.0.0.1';
+    if (host === 'localhost') host = '127.0.0.1';
+
+    // If an explicit non-loopback external Go2RTC base URL is configured in building_config
     if (data?.config?.go2rtc_base_url && data.config.go2rtc_base_url.trim()) {
       try {
         const u = new URL(data.config.go2rtc_base_url);
-        const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:';
-        return `${wsProto}//${u.host}/api/ws?src=${encodeURIComponent(streamId)}`;
+        const isLoopback = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+        if (!isLoopback) {
+          const proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+          return `${proto}//${u.host}/api/ws?src=${encodeURIComponent(streamId)}`;
+        }
       } catch (_) {}
     }
 
-    // Default to robust same-origin proxy (works across localhost:5173, remote LAN IP, and mobile HTTPS:5174)
-    const wsProtocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = typeof window !== 'undefined' && window.location.host ? window.location.host : '127.0.0.1:5173';
-    return `${wsProtocol}//${host}/api/ws?src=${encodeURIComponent(streamId)}`;
-  }, [data?.config?.go2rtc_base_url, streamId]);
+    return `${wsProto}//${host}:1984/api/ws?src=${encodeURIComponent(streamId)}`;
+  }, [streamId, data?.config?.go2rtc_base_url]);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
@@ -80,21 +88,23 @@ export const Go2rtcVideo: React.FC<Go2rtcVideoProps> = ({
     const video = videoRef.current;
     const rtc = new VideoRTC(video);
     rtcRef.current = rtc;
-    rtc.mode = 'webrtc';
+    rtc.mode = 'mse,webrtc';
     rtc.media = 'video,audio';
     rtc.background = true;
 
     video.muted = isMuted;
     video.defaultMuted = isMuted;
 
+    let isLive = false;
+
     // Safety timeout: if stream does not deliver playable frames within 15 seconds, display retry state
     const connectionTimeout = setTimeout(() => {
-      if (!video.srcObject || (video.paused && video.readyState < 2)) {
+      if (isLive || ((video.readyState >= 2 || video.currentTime > 0) && (video.src || video.srcObject))) {
+        handleStreamLive();
+      } else {
         setIsReloading(false);
         setIsPlaying(false);
         setHasError(true);
-      } else {
-        handleStreamLive();
       }
     }, 15000);
 
@@ -107,6 +117,7 @@ export const Go2rtcVideo: React.FC<Go2rtcVideoProps> = ({
     };
 
     const handleStreamLive = () => {
+      isLive = true;
       clearTimeout(connectionTimeout);
       setIsPlaying(true);
       setIsReloading(false);
@@ -120,14 +131,55 @@ export const Go2rtcVideo: React.FC<Go2rtcVideoProps> = ({
       handleStreamLive();
     };
 
-    video.addEventListener('playing', onPlaying);
+    const onTimeUpdate = () => {
+      if (video.currentTime > 0) {
+        handleStreamLive();
+      }
+    };
 
-    // Connect stream
+    const onWaiting = () => {
+      // Auto-resume if video pauses during brief buffer dip
+      if (video.paused && !video.ended) {
+        video.play().catch(() => {});
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        if (video.paused && !video.ended) {
+          video.play().catch(() => {});
+        }
+      }
+    };
+
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('loadeddata', onPlaying);
+    video.addEventListener('loadedmetadata', onPlaying);
+    video.addEventListener('canplay', onPlaying);
+    video.addEventListener('canplaythrough', onPlaying);
+    video.addEventListener('timeupdate', onTimeUpdate);
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('stalled', onWaiting);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange);
+    }
+
+    // Connect stream directly
     rtc.src = wsUrl;
 
     return () => {
       clearTimeout(connectionTimeout);
       video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('loadeddata', onPlaying);
+      video.removeEventListener('loadedmetadata', onPlaying);
+      video.removeEventListener('canplay', onPlaying);
+      video.removeEventListener('canplaythrough', onPlaying);
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('stalled', onWaiting);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+      }
       try {
         rtc.destroy();
       } catch (_) {}
@@ -177,6 +229,7 @@ export const Go2rtcVideo: React.FC<Go2rtcVideoProps> = ({
       <video
         ref={videoRef}
         playsInline
+        autoPlay
         muted={isMuted}
         className="w-full h-full block bg-black object-cover"
         style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}

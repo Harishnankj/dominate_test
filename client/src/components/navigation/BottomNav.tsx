@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Layers, Video, Sparkles, MessageSquareCode } from 'lucide-react';
+import { LayoutDashboard, Star, Layers, Video, Sparkles, MessageSquareCode } from 'lucide-react';
 
 interface BottomNavProps {
   currentTab: string;
@@ -8,10 +8,10 @@ interface BottomNavProps {
 
 export const BottomNav: React.FC<BottomNavProps> = ({ currentTab, setCurrentTab }) => {
   const navItems = [
-    { id: 'favorites', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'favorites', label: 'Favorites', icon: Star },
     { id: 'view', label: 'Rooms', icon: Layers },
     { id: 'cctv', label: 'CCTV', icon: Video },
-    { id: 'scenes', label: 'Scenes', icon: Sparkles },
     { id: 'chat', label: 'Assistant', icon: MessageSquareCode },
   ];
 

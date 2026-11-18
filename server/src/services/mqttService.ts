@@ -314,12 +314,30 @@ class MqttService {
         // Merge with existing state
         const current = this.deviceStates.get(friendlyName) || {};
         const merged = { ...current, ...parsedState };
-        this.deviceStates.set(friendlyName, merged);
 
         // Bi-directional lookup: also index under ieee_address (or friendly_name) so both keys work
         const knownDev = Array.from(this.discoveredDevices.values()).find(
           (d) => d.friendly_name === friendlyName || d.ieee_address === friendlyName
         );
+
+        // If multi-gang, dynamically compute collective state for the master tile
+        const exposes = knownDev?.definition?.exposes || [];
+        const switchExposes = exposes.filter(
+          (e: any) =>
+            e.type === 'switch' ||
+            e.name === 'state' ||
+            e.features?.some((f: any) => f.name === 'state')
+        );
+        if (switchExposes.length > 1) {
+          const endpointProps = switchExposes.map(
+            (e: any) => e.features?.[0]?.property || e.property || (e.endpoint ? `state_${e.endpoint}` : 'state')
+          );
+          const anyOn = endpointProps.some((p: string) => String(merged[p] || '').toUpperCase() === 'ON');
+          merged.state = anyOn ? 'ON' : 'OFF';
+        }
+
+        this.deviceStates.set(friendlyName, merged);
+
         if (knownDev) {
           if (knownDev.ieee_address && knownDev.ieee_address !== friendlyName) {
             this.deviceStates.set(knownDev.ieee_address, merged);
@@ -383,37 +401,63 @@ class MqttService {
 
     let resolvedPayload: Record<string, any> = { ...stateObj };
 
-    const isGenericToggle =
-      stateObj.state && typeof stateObj.state === 'string' && stateObj.state.toUpperCase() === 'TOGGLE';
+    // 1. Support specific endpoint targeting (e.g. { endpoint: 'l1', state: 'ON' } or { endpoint: '1', state: 'TOGGLE' })
+    if (resolvedPayload.endpoint && resolvedPayload.state) {
+      const epStr = String(resolvedPayload.endpoint).trim();
+      const prop = epStr.startsWith('state_') ? epStr : epStr.startsWith('l') ? `state_${epStr}` : `state_l${epStr}`;
+      const cmd = String(resolvedPayload.state).toUpperCase();
+      delete resolvedPayload.endpoint;
+      delete resolvedPayload.state;
+      if (cmd === 'TOGGLE') {
+        const isCurrentOn = String(current[prop] || '').toUpperCase() === 'ON';
+        resolvedPayload[prop] = isCurrentOn ? 'OFF' : 'ON';
+      } else {
+        resolvedPayload[prop] = cmd;
+      }
+    }
 
-    if (isGenericToggle) {
+    // 2. Handle generic 'state' commands ('ON', 'OFF', or 'TOGGLE')
+    if (resolvedPayload.state && typeof resolvedPayload.state === 'string') {
+      const cmd = resolvedPayload.state.toUpperCase();
       if (switchExposes.length > 1) {
-        // Multi-gang switch panel (e.g. F3-Pro 4-gang panel with state_l1, state_l2, ...)
+        // Multi-gang switch panel (e.g. 4-gang panel with state_l1, state_l2, etc.)
         const endpointProps = switchExposes.map(
           (e: any) => e.features?.[0]?.property || e.property || (e.endpoint ? `state_${e.endpoint}` : 'state')
         );
-        const anyOn = endpointProps.some((p: string) => String(current[p] || '').toUpperCase() === 'ON');
-        const nextVal = anyOn ? 'OFF' : 'ON';
-        resolvedPayload = {};
-        for (const p of endpointProps) {
-          resolvedPayload[p] = nextVal;
+        delete resolvedPayload.state;
+        if (cmd === 'TOGGLE') {
+          const anyOn = endpointProps.some((p: string) => String(current[p] || '').toUpperCase() === 'ON');
+          const nextVal = anyOn ? 'OFF' : 'ON';
+          for (const p of endpointProps) {
+            resolvedPayload[p] = nextVal;
+          }
+        } else {
+          // Both ON and OFF commands are distributed to all gangs
+          for (const p of endpointProps) {
+            resolvedPayload[p] = cmd;
+          }
         }
       } else {
         // Single relay, breaker, or energy meter
-        const isCurrentOn = String(current.state || '').toUpperCase() === 'ON';
-        resolvedPayload = { state: isCurrentOn ? 'OFF' : 'ON' };
-      }
-    } else {
-      // Check if specific endpoint properties were passed as 'TOGGLE' (e.g. { state_l1: 'TOGGLE' })
-      for (const [k, v] of Object.entries(resolvedPayload)) {
-        if (typeof v === 'string' && v.toUpperCase() === 'TOGGLE') {
-          const isCurrentOn = String(current[k] || '').toUpperCase() === 'ON';
-          resolvedPayload[k] = isCurrentOn ? 'OFF' : 'ON';
+        if (cmd === 'TOGGLE') {
+          const isCurrentOn = String(current.state || '').toUpperCase() === 'ON';
+          resolvedPayload.state = isCurrentOn ? 'OFF' : 'ON';
+        } else {
+          resolvedPayload.state = cmd;
         }
       }
     }
 
+    // 3. Resolve any individual endpoint properties passed as 'TOGGLE' (e.g. { state_l1: 'TOGGLE' })
+    for (const [k, v] of Object.entries(resolvedPayload)) {
+      if (typeof v === 'string' && v.toUpperCase() === 'TOGGLE') {
+        const isCurrentOn = String(current[k] || '').toUpperCase() === 'ON';
+        resolvedPayload[k] = isCurrentOn ? 'OFF' : 'ON';
+      }
+    }
+
     const payload = JSON.stringify(resolvedPayload);
+    console.log(`[MQTT] [${targetConn.hub.name}] Publishing to ${topic}: ${payload}`);
 
     return new Promise((resolve, reject) => {
       targetConn!.client?.publish(topic, payload, { qos: 0 }, (err) => {
@@ -424,6 +468,13 @@ class MqttService {
 
         // Optimistically update memory state
         const next = { ...current, ...resolvedPayload };
+        if (switchExposes.length > 1) {
+          const endpointProps = switchExposes.map(
+            (e: any) => e.features?.[0]?.property || e.property || (e.endpoint ? `state_${e.endpoint}` : 'state')
+          );
+          const anyOn = endpointProps.some((p: string) => String(next[p] || '').toUpperCase() === 'ON');
+          next.state = anyOn ? 'ON' : 'OFF';
+        }
         this.deviceStates.set(target, next);
         if (knownDev?.ieee_address) {
           this.deviceStates.set(knownDev.ieee_address, next);

@@ -23,8 +23,11 @@ if (typeof process !== 'undefined') {
 }
 
 const handleProxyError = (proxy: any) => {
-  proxy.on('error', () => {});
-  proxy.on('proxyReqWs', (_proxyReq: any, _req: any, socket: any) => {
+  proxy.on('error', (err: any) => {
+    console.log('[VITE PROXY ERROR]', err?.message);
+  });
+  proxy.on('proxyReqWs', (_proxyReq: any, req: any, socket: any) => {
+    console.log('[VITE WS PROXY UPGRADE]', req?.url, 'from:', req?.socket?.remoteAddress);
     socket.on('error', () => {});
   });
   proxy.on('open', (proxySocket: any) => {

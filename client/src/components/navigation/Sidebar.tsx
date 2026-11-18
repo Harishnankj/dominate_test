@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   LayoutDashboard,
+  Star,
   Layers,
   Video,
   Sparkles,
@@ -8,40 +9,24 @@ import {
   Workflow,
   Cpu,
   Activity,
-  Settings,
-  ShieldCheck,
-  Building2,
-  ChevronRight,
-  Radio,
+  Sliders,
 } from 'lucide-react';
-import { useBootstrap } from '../../context/BootstrapContext';
 import { useAuth } from '../../context/AuthContext';
-import { useHA } from '../../context/MultiHubHomeAssistantProvider';
 
 interface SidebarProps {
   currentTab: string;
   setCurrentTab: (tab: string) => void;
   onOpenAdmin: (tab?: any) => void;
+  adminStudioOpen?: boolean;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onOpenAdmin }) => {
-  const { data, isLiveSyncConnected, z2mStatus, tuyaStatus } = useBootstrap();
-  const { hubs: haHubs } = useHA();
-
-  const enabledHaHubs = (data?.hubs || []).filter((h) => h.enabled);
-  const connectedHaCount = enabledHaHubs.filter((h) => haHubs[h.id]?.isConnected).length;
-  const isHaConnected = connectedHaCount > 0;
-  const isZ2mConnected = Boolean(z2mStatus?.enabled && z2mStatus?.connected);
-  const isTuyaConnected = Boolean(tuyaStatus?.enabled && tuyaStatus?.cloud_connected);
-
-  const gatewaysCount = (isHaConnected ? 1 : 0) + (isZ2mConnected ? 1 : 0) + (isTuyaConnected ? 1 : 0);
-  const totalGateways = (enabledHaHubs.length > 0 ? 1 : 0) + (z2mStatus?.enabled ? 1 : 0) + (tuyaStatus?.enabled ? 1 : 0);
-
-  const allDevices = data?.devices || [];
-  const onlineDevicesCount = allDevices.length; // In local-first, all imported devices are monitored
+export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onOpenAdmin, adminStudioOpen }) => {
+  const { favorites } = useAuth();
+  const favoritesCount = (favorites || []).length;
 
   const navItems = [
-    { id: 'favorites', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'favorites', label: 'Favorites', icon: Star, badge: favoritesCount > 0 ? favoritesCount : null },
     { id: 'view', label: 'Rooms', icon: Layers },
     { id: 'cctv', label: 'CCTV', icon: Video },
     { id: 'scenes', label: 'Scenes', icon: Sparkles },
@@ -49,19 +34,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onO
     { id: 'automations', label: 'Automations', icon: Workflow },
     { id: 'devices', label: 'Devices', icon: Cpu },
     { id: 'energy', label: 'Energy', icon: Activity },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'admin-studio', label: 'Admin Studio', icon: Sliders },
   ];
 
   const handleNavClick = (id: string) => {
-    if (id === 'settings') {
-      onOpenAdmin('settings');
+    if (id === 'admin-studio') {
+      onOpenAdmin();
       return;
     }
     setCurrentTab(id);
   };
 
   return (
-    <aside className="w-[260px] h-screen bg-[#111214] border-r border-[#383A3E] flex flex-col justify-between flex-shrink-0 select-none">
+    <aside className="w-[260px] h-screen bg-[#111214] border-r border-[#383A3E] flex flex-col justify-between flex-shrink-0 select-none overflow-y-auto scrollbar-none">
       {/* Top Branding Section */}
       <div>
         <div className="p-5 border-b border-[#383A3E]/80 flex items-center gap-3">
@@ -85,7 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onO
         <nav className="p-3 space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = currentTab === item.id;
+            const isActive = item.id === 'admin-studio' ? Boolean(adminStudioOpen) : currentTab === item.id;
 
             return (
               <button
@@ -100,50 +85,31 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onO
                 <div className="flex items-center gap-3">
                   <Icon
                     className={`w-4 h-4 transition-colors ${
-                      isActive ? 'text-[#090A0C]' : 'text-[#777777] group-hover:text-[#F5F5F5]'
+                      isActive ? 'text-[#090A0C]' : item.id === 'favorites' ? 'text-[#F0B94D]' : 'text-[#777777] group-hover:text-[#F5F5F5]'
                     }`}
                   />
                   <span>{item.label}</span>
                 </div>
-                {isActive && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#090A0C]" />
-                )}
+                <div className="flex items-center gap-2">
+                  {item.badge != null && (
+                    <span
+                      className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                        isActive
+                          ? 'bg-[#090A0C] text-white'
+                          : 'bg-[#F0B94D]/20 text-[#F0B94D] border border-[#F0B94D]/30'
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                  {isActive && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#090A0C]" />
+                  )}
+                </div>
               </button>
             );
           })}
         </nav>
-      </div>
-
-      {/* Bottom System Status Section */}
-      <div className="p-4 border-t border-[#383A3E]/80 bg-[#090A0C]/50 space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-[#777777]">
-            System Status
-          </span>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#22D68A] shadow-[0_0_8px_#22D68A]" />
-            <span className="text-[11px] font-mono font-bold text-[#22D68A]">ONLINE</span>
-          </div>
-        </div>
-
-        <div className="space-y-1.5 text-[11px]">
-          <div className="flex items-center justify-between text-[#A6A6A6]">
-            <span className="text-[#777777]">Gateways</span>
-            <span className="font-mono text-[#F5F5F5]">
-              {gatewaysCount}/{Math.max(totalGateways, 1)} Connected
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-[#A6A6A6]">
-            <span className="text-[#777777]">Online Devices</span>
-            <span className="font-mono text-[#F5F5F5] font-semibold">
-              {onlineDevicesCount} Active
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-[#A6A6A6]">
-            <span className="text-[#777777]">Local-First Engine</span>
-            <span className="font-mono text-[#22D68A]">Active (0ms cloud lag)</span>
-          </div>
-        </div>
       </div>
     </aside>
   );

@@ -46,8 +46,10 @@ import {
   Activity,
   AlertCircle,
   WifiOff,
+  Star,
 } from 'lucide-react';
 import { useBootstrap } from '../../context/BootstrapContext';
+import { useAuth } from '../../context/AuthContext';
 import { useHA } from '../../context/MultiHubHomeAssistantProvider';
 import { ApiService } from '../../services/api';
 import { DeviceMappingModal } from './DeviceMappingModal';
@@ -74,6 +76,7 @@ interface AdminStudioPageProps {
 export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initialTab = 'hubs' }) => {
   const { data, refreshBootstrap } = useBootstrap();
   const { hubs: liveHaHubs, reconnectHub } = useHA();
+  const { isFavorite, toggleFavorite } = useAuth();
 
   const enabledHaHubs = (data?.hubs || []).filter((h) => h.enabled);
   const connectedHaCount = enabledHaHubs.filter((h) => liveHaHubs[h.id]?.isConnected).length;
@@ -218,6 +221,8 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
   React.useEffect(() => {
     if (activeTab === 'z2m') {
       fetchZ2mInfo();
+      const interval = setInterval(fetchZ2mInfo, 8000);
+      return () => clearInterval(interval);
     }
   }, [activeTab, fetchZ2mInfo]);
 
@@ -1804,9 +1809,11 @@ advanced:
                   ]).map((hub) => {
                     const isPermitActive =
                       permitJoinTimer > 0 && (activePermitHubId === hub.id || activePermitHubId === 'all');
-                    const hubDevCount = z2mDevicesList.filter(
-                      (d) => d.hub_id === hub.id || d.base_topic === hub.base_topic
-                    ).length;
+                    const hubDevCount = typeof hub.devicesCount === 'number'
+                      ? hub.devicesCount
+                      : z2mDevicesList.filter(
+                          (d) => d.hub_id ? d.hub_id === hub.id : hub.id === (z2mHubs[0]?.id || 'z2m_hub_1')
+                        ).length;
 
                     return (
                       <div
@@ -1853,14 +1860,22 @@ advanced:
                               <span>{hub.broker_url}</span>
                               <span className="text-slate-600">•</span>
                               <span className="text-cyan-300 font-semibold">
-                                {hubDevCount} Discovered Devices
+                                {hubDevCount} {hubDevCount === 1 ? 'Discovered Device' : 'Discovered Devices'}
                               </span>
                             </div>
 
                             {hub.lastError && (
-                              <p className="text-[11px] text-rose-400 font-mono">
-                                Error: {hub.lastError}
-                              </p>
+                              <div className="mt-2 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-[11px] font-mono">
+                                <div className="flex items-center gap-1.5 font-bold">
+                                  <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                                  <span>Connection Error:</span> {hub.lastError}
+                                </div>
+                                {hub.lastError.includes('ECONNREFUSED') && (
+                                  <p className="text-[10px] text-rose-300/80 mt-1 font-sans pl-5 leading-normal">
+                                    Target host refused port 1883. Verify that the Mosquitto MQTT broker service is running on this IP, or check whether this coordinator uses a different port or shared broker.
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
 
@@ -2096,9 +2111,11 @@ advanced:
                         All ({z2mDevicesList.length})
                       </button>
                       {z2mHubs.map((hub) => {
-                        const count = z2mDevicesList.filter(
-                          (d) => d.hub_id === hub.id || d.base_topic === hub.base_topic
-                        ).length;
+                        const count = typeof hub.devicesCount === 'number'
+                          ? hub.devicesCount
+                          : z2mDevicesList.filter(
+                              (d) => d.hub_id ? d.hub_id === hub.id : hub.id === (z2mHubs[0]?.id || 'z2m_hub_1')
+                            ).length;
                         return (
                           <button
                             key={hub.id}
@@ -2153,8 +2170,9 @@ advanced:
                       .filter((dev) => {
                         const matchesHub =
                           z2mFilterHubId === 'all' ||
-                          dev.hub_id === z2mFilterHubId ||
-                          dev.base_topic === z2mFilterHubId;
+                          (dev.hub_id
+                            ? dev.hub_id === z2mFilterHubId
+                            : z2mFilterHubId === (z2mHubs[0]?.id || 'z2m_hub_1'));
                         const q = z2mSearchQuery.toLowerCase().trim();
                         const matchesSearch =
                           !q ||
@@ -2874,6 +2892,18 @@ advanced:
                             )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => toggleFavorite(dev.id)}
+                              className={`p-1.5 rounded-lg transition-colors ${
+                                isFavorite(dev.id)
+                                  ? 'bg-amber-500/20 text-[#F0B94D] border border-amber-500/40'
+                                  : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                              }`}
+                              title={isFavorite(dev.id) ? 'Favorited (Click to remove from Favorites)' : 'Add to Favorites'}
+                            >
+                              <Star className={`w-3.5 h-3.5 ${isFavorite(dev.id) ? 'fill-current' : ''}`} />
+                            </button>
                             <button
                               onClick={() => {
                                 setEditingDevice(dev);

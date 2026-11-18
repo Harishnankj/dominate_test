@@ -4,14 +4,15 @@ api:
 webrtc:
   listen: :8555
   candidates:
+    - 192.168.0.88:8555
     - 192.168.0.87:8555
     - 127.0.0.1:8555
     - stun:8555
 streams:
   cam1:
-    - rtsp://bezlin:%23Kinhah3059@192.168.0.176:554/stream1#tcp#backchannel=0
+    - rtsp://bezlin:%23Kinhah3059@192.168.0.176:554/stream2#tcp#backchannel=0
   cam1F:
-    - cam1
+    - rtsp://bezlin:%23Kinhah3059@192.168.0.176:554/stream1#tcp#backchannel=0
   cam2:
     - rtsp://192.168.0.38:5543/161320ba8e9173e0ab3a0a2a3c8fc410/live/channel1#tcp#backchannel=0
   cam2F:
@@ -37,4 +38,6 @@ streams:
   tuya_doorlock:
     - rtsps://echo:5PycxwPCdLWpJjHmADUSPJjxoYNjzSPJ@wework-6-ind.stream.iot-11.com:443/v1/d7c1f02594322e7d0dyyoy/dbqot2etkbg1gj9batog5OBR2Wq8CvjM?signInfo=OEV1dRk4hQa8kRa_f71xMvdXODmmGw8kK9ETyQN3vK-Ksg_fVSPxcYTsDt7fHwECb4WQOVmU0iMUmZSZuJeNLpgdo67TRGlwAca3-qP6K21s56CY6iu0BLI_61xpfSOnIBn-AqPhl19ukTZBeMUb_ngw8BvBgVMfJOdYP9ullQo
   tuya_doorlock_0dyyoy:
-    - rtsps://echo:Fjox7hoHI3EjXwJPXM7phmEEDA9b1qFr@wework-11-ind.stream.iot-11.com:443/v1/d7c1f02594322e7d0dyyoy/dbrani7mt0a27ltbroa0jcjTCNchJJ6e?signInfo=secXzXvm8AuMxh8sN14NlHCZOBnRDDcn6_5mD_XREA2ZrZwxWt13MLGeUvmZO7IkSQJrVg_F2TSnAbxe9JGqnTobN5MsUzzlWidx500tEsJJpI9Ny2ix1fE_vqbgpOC8GgSn7nhny7PVuWGu0D4Ee84y1pWNgMuhts548VLtVhc
+    - rtsps://echo:LjbENtjXntaA2CxFYuasCLiAJxKqVMha@wework-9-ind.stream.iot-11.com:443/v1/d7c1f02594322e7d0dyyoy/dbt98ris7rbpv2506gn0FC1JYXUJzLeT?signInfo=tNa-jL5Gu8Ky1Qhdf37VVSMyMgivY4_OGk2mcLM55Cr_JfWwllibKUKPBHCSzpHDfL-QjEnn5wi-o4co9vR37DMIAVW7O9A8A0h_NQ_Sos0hAbmxkRiF5WrJOiveJ1m482rKhvjdZpcZds9czU9pLq2yuw4T31DlM57pPkCzrE4
+  test_sub:
+    - rtsp://bezlin:%23Kinhah3059@192.168.0.176:554/stream2#tcp#backchannel=0

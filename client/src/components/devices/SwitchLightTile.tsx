@@ -18,7 +18,11 @@ export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
   try { devConfig = JSON.parse(device.config_json || '{}'); } catch (_) {}
   const z2mName = device.z2m_friendly_name || devConfig.z2m_friendly_name;
   const z2mState = z2mName ? getZ2mState(z2mName) : undefined;
-  const endpoint = devConfig.endpoint || (device.name.match(/switch\s*(\d+)/i) ? `l${device.name.match(/switch\s*(\d+)/i)?.[1]}` : undefined);
+  const endpoint =
+    devConfig.endpoint ||
+    (device.name.match(/(?:switch|gang|button|light|ch|channel|relay)\s*(\d+)/i)
+      ? `l${device.name.match(/(?:switch|gang|button|light|ch|channel|relay)\s*(\d+)/i)?.[1]}`
+      : undefined);
 
   const tuyaId = device.tuya_device_id || devConfig.tuya_device_id;
   const tuyaState = tuyaId ? getTuyaState(tuyaId) : undefined;
@@ -29,8 +33,17 @@ export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
     effectiveState = haState;
   } else if (endpoint && z2mState?.[`state_${endpoint}`]) {
     effectiveState = String(z2mState[`state_${endpoint}`]).toLowerCase();
+  } else if (endpoint && z2mState?.[endpoint]) {
+    effectiveState = String(z2mState[endpoint]).toLowerCase();
   } else if (z2mState?.state) {
     effectiveState = z2mState.state.toLowerCase();
+  } else if (z2mState) {
+    const gangStates = Object.keys(z2mState)
+      .filter((k) => k.startsWith('state_') && typeof z2mState[k] === 'string')
+      .map((k) => z2mState[k].toLowerCase());
+    if (gangStates.length > 0) {
+      effectiveState = gangStates.includes('on') ? 'on' : 'off';
+    }
   } else if (tuyaState) {
     if (tuyaState.switch_1 !== undefined) {
       effectiveState = tuyaState.switch_1 ? 'on' : 'off';

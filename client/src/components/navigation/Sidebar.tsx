@@ -11,7 +11,6 @@ import {
   Activity,
   Sliders,
 } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
 
 interface SidebarProps {
   currentTab: string;
@@ -21,12 +20,9 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onOpenAdmin, adminStudioOpen }) => {
-  const { favorites } = useAuth();
-  const favoritesCount = (favorites || []).length;
-
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'favorites', label: 'Favorites', icon: Star, badge: favoritesCount > 0 ? favoritesCount : null },
+    { id: 'favorites', label: 'Favorites', icon: Star },
     { id: 'view', label: 'Rooms', icon: Layers },
     { id: 'cctv', label: 'CCTV', icon: Video },
     { id: 'scenes', label: 'Scenes', icon: Sparkles },
@@ -90,22 +86,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onO
                   />
                   <span>{item.label}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  {item.badge != null && (
-                    <span
-                      className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
-                        isActive
-                          ? 'bg-[#090A0C] text-white'
-                          : 'bg-[#F0B94D]/20 text-[#F0B94D] border border-[#F0B94D]/30'
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
-                  {isActive && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#090A0C]" />
-                  )}
-                </div>
+                {isActive && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#090A0C]" />
+                )}
               </button>
             );
           })}

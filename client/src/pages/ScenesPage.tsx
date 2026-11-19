@@ -16,7 +16,8 @@ import {
 import { useBootstrap } from '../context/BootstrapContext';
 import { useAuth } from '../context/AuthContext';
 import { ApiService } from '../services/api';
-import type { Automation } from '../types';
+import type { Automation, PresetScene } from '../types';
+import { PresetEditModal, PRESET_ICON_MAP } from '../components/scenes/PresetEditModal';
 
 interface ScenesPageProps {
   onOpenAdmin?: () => void;
@@ -35,99 +36,61 @@ export const ScenesPage: React.FC<ScenesPageProps> = ({
 
   const [runningSceneId, setRunningSceneId] = useState<string | null>(null);
   const [successSceneId, setSuccessSceneId] = useState<string | null>(null);
+  const [editingPreset, setEditingPreset] = useState<PresetScene | null>(null);
 
-  // Architectural Presets
-  const presetScenes = [
-    {
-      id: 'work_mode',
-      name: 'Work Mode',
-      desc: 'Optimized 4000K daylight lighting, comfortable 23°C climate',
-      icon: Sun,
-      accentColor: 'text-[#F0B94D]',
-      action: async () => {
-        for (const dev of allDevices) {
-          if (dev.type === 'dimmable_light') {
-            let cfg: any = {};
-            try {
-              cfg = JSON.parse(dev.config_json);
-            } catch (_) {}
-            const zName = dev.z2m_friendly_name || cfg.z2m_friendly_name;
-            if (zName)
-              setZ2mState(zName, { state: 'ON', brightness: 220, color_temp: 350 }).catch(
-                () => {}
-              );
-          } else if (dev.type === 'switch_light') {
-            let cfg: any = {};
-            try {
-              cfg = JSON.parse(dev.config_json);
-            } catch (_) {}
-            const zName = dev.z2m_friendly_name || cfg.z2m_friendly_name;
-            if (zName) setZ2mState(zName, { state: 'ON' }).catch(() => {});
-          }
-        }
-      },
-    },
-    {
-      id: 'meeting_mode',
-      name: 'Meeting Mode',
-      desc: 'Conference lighting & presentation ambience across rooms',
-      icon: Sparkles,
-      accentColor: 'text-[#22D68A]',
-      action: async () => {
-        for (const dev of allDevices) {
-          if (dev.type === 'dimmable_light') {
-            let cfg: any = {};
-            try {
-              cfg = JSON.parse(dev.config_json);
-            } catch (_) {}
-            const zName = dev.z2m_friendly_name || cfg.z2m_friendly_name;
-            if (zName) setZ2mState(zName, { state: 'ON', brightness: 160 }).catch(() => {});
-          }
-        }
-      },
-    },
-    {
-      id: 'night_mode',
-      name: 'Night Mode',
-      desc: 'Secure all building entrances and power down work fixtures',
-      icon: Moon,
-      accentColor: 'text-indigo-400',
-      action: async () => {
-        await ApiService.lockAllDoors().catch(() => {});
-        for (const dev of allDevices) {
-          if (dev.type === 'switch_light' || dev.type === 'dimmable_light') {
-            let cfg: any = {};
-            try {
-              cfg = JSON.parse(dev.config_json);
-            } catch (_) {}
-            const zName = dev.z2m_friendly_name || cfg.z2m_friendly_name;
-            if (zName) setZ2mState(zName, { state: 'OFF' }).catch(() => {});
-          }
-        }
-      },
-    },
-    {
-      id: 'all_off',
-      name: 'All Off',
-      desc: 'Emergency / end-of-day shutoff for all lighting and fixtures',
-      icon: Power,
-      accentColor: 'text-[#FF5757]',
-      action: async () => {
-        for (const dev of allDevices) {
-          if (dev.type === 'switch_light' || dev.type === 'dimmable_light') {
-            let cfg: any = {};
-            try {
-              cfg = JSON.parse(dev.config_json);
-            } catch (_) {}
-            const zName = dev.z2m_friendly_name || cfg.z2m_friendly_name;
-            const tuyaId = dev.tuya_device_id || cfg.tuya_device_id;
-            if (zName) setZ2mState(zName, { state: 'OFF' }).catch(() => {});
-            if (tuyaId) setTuyaState(tuyaId, { switch_1: false }).catch(() => {});
-          }
-        }
-      },
-    },
-  ];
+  // Architectural Presets: load dynamically from database / bootstrap, fallback to defaults
+  const presetScenes: PresetScene[] =
+    data?.presets && data.presets.length > 0
+      ? data.presets
+      : [
+          {
+            id: 'work_mode',
+            name: 'Work Mode',
+            desc: 'Optimized 4000K daylight lighting, comfortable 23°C climate',
+            icon: 'Sun',
+            accent_color: 'text-[#F0B94D]',
+            actions_json: JSON.stringify([
+              { type: 'directive', target: 'lights', state: 'ON', brightness: 85, color_temp: 350 },
+              { type: 'directive', target: 'climate', state: 'ON', temp: 23 },
+            ]),
+            sort_order: 1,
+          },
+          {
+            id: 'meeting_mode',
+            name: 'Meeting Mode',
+            desc: 'Conference lighting & presentation ambience across rooms',
+            icon: 'Sparkles',
+            accent_color: 'text-[#22D68A]',
+            actions_json: JSON.stringify([
+              { type: 'directive', target: 'lights', state: 'ON', brightness: 60 },
+            ]),
+            sort_order: 2,
+          },
+          {
+            id: 'night_mode',
+            name: 'Night Mode',
+            desc: 'Secure all building entrances and power down work fixtures',
+            icon: 'Moon',
+            accent_color: 'text-indigo-400',
+            actions_json: JSON.stringify([
+              { type: 'directive', target: 'locks', action: 'lock' },
+              { type: 'directive', target: 'lights', state: 'OFF' },
+            ]),
+            sort_order: 3,
+          },
+          {
+            id: 'all_off',
+            name: 'All Off',
+            desc: 'Emergency / end-of-day shutoff for all lighting and fixtures',
+            icon: 'Power',
+            accent_color: 'text-[#FF5757]',
+            actions_json: JSON.stringify([
+              { type: 'directive', target: 'lights', state: 'OFF' },
+              { type: 'directive', target: 'plugs', state: 'OFF' },
+            ]),
+            sort_order: 4,
+          },
+        ];
 
   // Custom user-defined scenes (trigger_json = { type: 'manual' })
   const customScenes = automations.filter((auto) => {
@@ -139,15 +102,56 @@ export const ScenesPage: React.FC<ScenesPageProps> = ({
     }
   });
 
-  const handleRunPreset = async (scene: (typeof presetScenes)[0]) => {
+  const handleRunPreset = async (scene: PresetScene) => {
     setRunningSceneId(scene.id);
     setSuccessSceneId(null);
     try {
-      await scene.action();
+      // 1. Dual execution: call server endpoint
+      await ApiService.runPreset(scene.id);
+
+      // 2. Also run quick local actuation fallback
+      let actions: any[] = [];
+      try {
+        actions = JSON.parse(scene.actions_json || '[]');
+      } catch (_) {}
+
+      for (const item of actions) {
+        if (item.target === 'lights' || item.type === 'all_lights') {
+          const isOff = item.state === 'OFF';
+          const bPct = item.brightness ?? 80;
+          for (const dev of allDevices) {
+            let cfg: any = {};
+            try { cfg = JSON.parse(dev.config_json); } catch (_) {}
+            const zName = dev.z2m_friendly_name || cfg.z2m_friendly_name;
+            const tuyaId = dev.tuya_device_id || cfg.tuya_device_id;
+            if (dev.type === 'dimmable_light') {
+              if (zName) setZ2mState(zName, isOff ? { state: 'OFF' } : { state: 'ON', brightness: Math.round((bPct / 100) * 254), color_temp: item.color_temp ?? 350 }).catch(() => {});
+              if (tuyaId) setTuyaState(tuyaId, { switch_led: !isOff }).catch(() => {});
+            } else if (dev.type === 'switch_light') {
+              if (zName) setZ2mState(zName, { state: isOff ? 'OFF' : 'ON' }).catch(() => {});
+              if (tuyaId) setTuyaState(tuyaId, { switch_1: !isOff }).catch(() => {});
+            }
+          }
+        } else if (item.target === 'locks' && item.action === 'lock') {
+          ApiService.lockAllDoors().catch(() => {});
+        } else if (item.target === 'plugs' && item.state === 'OFF') {
+          for (const dev of allDevices) {
+            if (dev.type === 'switch_light') {
+              let cfg: any = {};
+              try { cfg = JSON.parse(dev.config_json); } catch (_) {}
+              const zName = dev.z2m_friendly_name || cfg.z2m_friendly_name;
+              const tuyaId = dev.tuya_device_id || cfg.tuya_device_id;
+              if (zName) setZ2mState(zName, { state: 'OFF' }).catch(() => {});
+              if (tuyaId) setTuyaState(tuyaId, { switch_1: false }).catch(() => {});
+            }
+          }
+        }
+      }
+
       setSuccessSceneId(scene.id);
       setTimeout(() => setSuccessSceneId(null), 3000);
     } catch (err: any) {
-      alert(`Scene failed: ${err.message}`);
+      alert(`Scene execution failed: ${err.message}`);
     } finally {
       setRunningSceneId(null);
     }
@@ -234,18 +238,32 @@ export const ScenesPage: React.FC<ScenesPageProps> = ({
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {presetScenes.map((scene) => {
-            const Icon = scene.icon;
+            const Icon = typeof scene.icon === 'string' ? PRESET_ICON_MAP[scene.icon] || Sun : scene.icon || Sun;
             const isRunning = runningSceneId === scene.id;
             const isSuccess = successSceneId === scene.id;
+            const colorClass = scene.accent_color || (scene as any).accentColor || 'text-white';
 
             return (
               <div
                 key={scene.id}
-                className="bg-[#191A1D] rounded-2xl p-5 border border-[#383A3E] hover:border-[#4B4E54] flex flex-col justify-between gap-4 transition-all"
+                className="bg-[#191A1D] rounded-2xl p-5 border border-[#383A3E] hover:border-[#4B4E54] flex flex-col justify-between gap-4 transition-all relative group"
               >
                 <div className="space-y-2">
-                  <div className="w-10 h-10 rounded-xl bg-[#111214] border border-[#383A3E] flex items-center justify-center">
-                    <Icon className={`w-5 h-5 ${scene.accentColor}`} />
+                  <div className="flex items-center justify-between">
+                    <div className="w-10 h-10 rounded-xl bg-[#111214] border border-[#383A3E] flex items-center justify-center">
+                      <Icon className={`w-5 h-5 ${colorClass}`} />
+                    </div>
+
+                    {isAdmin && (
+                      <button
+                        onClick={() => setEditingPreset(scene)}
+                        className="px-2.5 py-1 rounded-lg bg-[#111214] hover:bg-[#202226] text-[#A6A6A6] hover:text-white border border-[#383A3E] hover:border-white/40 text-[11px] font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+                        title="Customize preset for building"
+                      >
+                        <Sliders className="w-3 h-3" />
+                        <span>Edit</span>
+                      </button>
+                    )}
                   </div>
                   <h4 className="font-bold text-sm text-[#F5F5F5]">{scene.name}</h4>
                   <p className="text-xs text-[#A6A6A6] leading-relaxed">{scene.desc}</p>
@@ -363,6 +381,13 @@ export const ScenesPage: React.FC<ScenesPageProps> = ({
           </div>
         )}
       </div>
+
+      {/* Preset Scene Customization Modal (Admin) */}
+      <PresetEditModal
+        isOpen={!!editingPreset}
+        preset={editingPreset}
+        onClose={() => setEditingPreset(null)}
+      />
     </div>
   );
 };

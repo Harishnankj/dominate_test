@@ -20,6 +20,7 @@ import automationsRouter from './routes/automations.js';
 import miscRouter from './routes/misc.js';
 import z2mRouter from './routes/z2m.js';
 import tuyaRouter from './routes/tuya.js';
+import presetsRouter from './routes/presets.js';
 import { mqttService } from './services/mqttService.js';
 import { startHttpsGateway } from './httpsGateway.js';
 
@@ -49,6 +50,7 @@ app.use('/api/bootstrap', bootstrapRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/devices', devicesRouter);
 app.use('/api/automations', automationsRouter);
+app.use('/api/presets', presetsRouter);
 app.use('/api/z2m', z2mRouter);
 app.use('/api/tuya', tuyaRouter);
 app.use('/api', miscRouter);

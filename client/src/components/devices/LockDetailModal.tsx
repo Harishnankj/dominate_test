@@ -302,8 +302,8 @@ const LockDetailModal: React.FC<LockDetailModalProps> = ({ device, tuyaDeviceId,
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${active
-                    ? 'bg-white text-slate-950 font-bold shadow-sm'
-                    : 'text-[#A6A6A6] hover:text-white hover:bg-white/5'
+                  ? 'bg-white text-slate-950 font-bold shadow-sm'
+                  : 'text-[#A6A6A6] hover:text-white hover:bg-white/5'
                   }`}
               >
                 {t.icon}
@@ -350,8 +350,8 @@ const LockDetailModal: React.FC<LockDetailModalProps> = ({ device, tuyaDeviceId,
                   style={{ WebkitUserSelect: 'none', userSelect: 'none' }}
                 >
                   <div className={`w-28 h-28 rounded-full flex flex-col items-center justify-center shadow-lg border transition-all ${locked
-                      ? 'bg-[#191A1D] border-white/40 text-white'
-                      : 'bg-white text-slate-950 border-white'
+                    ? 'bg-[#191A1D] border-white/40 text-white'
+                    : 'bg-white text-slate-950 border-white'
                     }`}>
                     {loading ? (
                       <RefreshCw className="w-8 h-8 animate-spin" />
@@ -370,8 +370,8 @@ const LockDetailModal: React.FC<LockDetailModalProps> = ({ device, tuyaDeviceId,
               {/* Status Message */}
               {lockMsg && (
                 <div className={`w-full max-w-sm px-4 py-2.5 rounded-xl text-center text-xs font-bold border ${locked
-                    ? 'bg-[#191A1D] border-[#383A3E] text-[#F5F5F5]'
-                    : 'bg-[#22D68A]/10 border-[#22D68A]/40 text-[#22D68A]'
+                  ? 'bg-[#191A1D] border-[#383A3E] text-[#F5F5F5]'
+                  : 'bg-[#22D68A]/10 border-[#22D68A]/40 text-[#22D68A]'
                   }`}>
                   {lockMsg}
                 </div>
@@ -553,8 +553,8 @@ const LockDetailModal: React.FC<LockDetailModalProps> = ({ device, tuyaDeviceId,
                     <div
                       key={m}
                       className={`flex-1 py-2.5 rounded-xl border text-center text-xs font-semibold transition-all cursor-pointer ${captureMode === m
-                          ? 'border-white bg-white text-slate-950 font-bold'
-                          : 'border-[#383A3E] bg-[#111214] text-[#A6A6A6] hover:border-white/30'
+                        ? 'border-white bg-white text-slate-950 font-bold'
+                        : 'border-[#383A3E] bg-[#111214] text-[#A6A6A6] hover:border-white/30'
                         }`}
                     >
                       {m === 'mode_1' ? '5-Photo Burst' : '10-Second Video'}
@@ -618,8 +618,8 @@ const LockDetailModal: React.FC<LockDetailModalProps> = ({ device, tuyaDeviceId,
                     <div className="text-[10px] text-[#A6A6A6]">{m.method}</div>
                   </div>
                   <span className={`text-[9px] font-mono px-2 py-0.5 rounded border ${m.role === 'Owner'
-                      ? 'bg-white/10 text-white border-white/30 font-bold'
-                      : 'bg-[#202226] text-[#A6A6A6] border-[#383A3E]'
+                    ? 'bg-white/10 text-white border-white/30 font-bold'
+                    : 'bg-[#202226] text-[#A6A6A6] border-[#383A3E]'
                     }`}>
                     {m.role}
                   </span>
@@ -692,8 +692,8 @@ const LockDetailModal: React.FC<LockDetailModalProps> = ({ device, tuyaDeviceId,
                       <button
                         key={d}
                         className={`py-2 rounded-lg text-[10px] font-bold border transition-all ${d === '15s'
-                            ? 'bg-white text-slate-950 border-white'
-                            : 'bg-[#111214] border-[#383A3E] text-[#A6A6A6] hover:border-white/30'
+                          ? 'bg-white text-slate-950 border-white'
+                          : 'bg-[#111214] border-[#383A3E] text-[#A6A6A6] hover:border-white/30'
                           }`}
                       >
                         {d}

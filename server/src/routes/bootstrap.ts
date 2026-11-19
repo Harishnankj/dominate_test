@@ -16,6 +16,10 @@ router.get('/', (req, res) => {
     const cameras = db.prepare('SELECT * FROM cameras ORDER BY sort_order ASC, name ASC').all();
     const ir_profiles = db.prepare('SELECT id, name, brand FROM ir_profiles ORDER BY name ASC').all();
     const automations = db.prepare('SELECT * FROM automations ORDER BY name ASC').all();
+    let presets: any[] = [];
+    try {
+      presets = db.prepare('SELECT * FROM preset_scenes ORDER BY sort_order ASC, name ASC').all();
+    } catch (_) {}
     const virtualRows = db.prepare('SELECT * FROM virtual_device_states').all() as any[];
 
     const virtual_device_states: Record<string, any> = {};
@@ -55,6 +59,7 @@ router.get('/', (req, res) => {
       cameras,
       ir_profiles,
       automations,
+      presets,
       virtual_device_states,
       user_count: userCount,
       user: user

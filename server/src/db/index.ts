@@ -127,6 +127,85 @@ export function initDatabase() {
     }
   } catch (_) {}
 
+  // Schema table for architectural preset scenes (editable by admin)
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS preset_scenes (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        desc TEXT NOT NULL,
+        icon TEXT NOT NULL DEFAULT 'Sun',
+        accent_color TEXT DEFAULT 'text-[#F0B94D]',
+        actions_json TEXT NOT NULL DEFAULT '[]',
+        is_active INTEGER DEFAULT 1,
+        sort_order INTEGER DEFAULT 0,
+        updated_at TEXT
+      );
+    `);
+    const countRow = db.prepare('SELECT COUNT(*) as cnt FROM preset_scenes').get() as { cnt: number };
+    if (!countRow || countRow.cnt === 0) {
+      const now = new Date().toISOString();
+      const defaultPresets = [
+        {
+          id: 'work_mode',
+          name: 'Work Mode',
+          desc: 'Optimized 4000K daylight lighting, comfortable 23°C climate',
+          icon: 'Sun',
+          accent_color: 'text-[#F0B94D]',
+          actions_json: JSON.stringify([
+            { type: 'directive', target: 'lights', state: 'ON', brightness: 85, color_temp: 350 },
+            { type: 'directive', target: 'climate', state: 'ON', temp: 23 },
+          ]),
+          sort_order: 1,
+        },
+        {
+          id: 'meeting_mode',
+          name: 'Meeting Mode',
+          desc: 'Conference lighting & presentation ambience across rooms',
+          icon: 'Sparkles',
+          accent_color: 'text-[#22D68A]',
+          actions_json: JSON.stringify([
+            { type: 'directive', target: 'lights', state: 'ON', brightness: 60 },
+          ]),
+          sort_order: 2,
+        },
+        {
+          id: 'night_mode',
+          name: 'Night Mode',
+          desc: 'Secure all building entrances and power down work fixtures',
+          icon: 'Moon',
+          accent_color: 'text-indigo-400',
+          actions_json: JSON.stringify([
+            { type: 'directive', target: 'locks', action: 'lock' },
+            { type: 'directive', target: 'lights', state: 'OFF' },
+          ]),
+          sort_order: 3,
+        },
+        {
+          id: 'all_off',
+          name: 'All Off',
+          desc: 'Emergency / end-of-day shutoff for all lighting and fixtures',
+          icon: 'Power',
+          accent_color: 'text-[#FF5757]',
+          actions_json: JSON.stringify([
+            { type: 'directive', target: 'lights', state: 'OFF' },
+            { type: 'directive', target: 'plugs', state: 'OFF' },
+          ]),
+          sort_order: 4,
+        },
+      ];
+
+      for (const p of defaultPresets) {
+        db.prepare(`
+          INSERT INTO preset_scenes (id, name, desc, icon, accent_color, actions_json, is_active, sort_order, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+        `).run(p.id, p.name, p.desc, p.icon, p.accent_color, p.actions_json, p.sort_order, now);
+      }
+    }
+  } catch (err: any) {
+    console.error('[Database] Failed to initialize preset_scenes table:', err);
+  }
+
   // Ensure building_config row 1 exists in a fresh, unconfigured state (setup_completed = 0)
   const config = db.prepare('SELECT id, setup_completed FROM building_config WHERE id = 1').get() as { id: number; setup_completed: number } | undefined;
   if (!config) {

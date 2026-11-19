@@ -156,9 +156,22 @@ export interface Automation {
   last_run_at?: string;
   last_checked_at?: string;
   last_triggered_key?: string;
+  last_trigger_state_key?: string;
   last_error?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface PresetScene {
+  id: string;
+  name: string;
+  desc: string;
+  icon: string;
+  accent_color?: string;
+  actions_json: string;
+  is_active?: number;
+  sort_order?: number;
+  updated_at?: string;
 }
 
 export interface HaEntityState {
@@ -268,6 +281,7 @@ export interface BootstrapData {
   cameras: Camera[];
   ir_profiles: IrProfile[];
   automations: Automation[];
+  presets?: PresetScene[];
   virtual_device_states: Record<string, any>;
   user_count: number;
   user: User | null;

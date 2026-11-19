@@ -20,6 +20,10 @@ import { EnergyPage } from './pages/EnergyPage';
 import { ChatPage } from './pages/ChatPage';
 import { LockTestingPage } from './pages/LockTestingPage';
 
+import { DomflyFloatingCompanion } from './components/companion/DomflyFloatingCompanion';
+import { FloatingAssistantDrawer } from './components/companion/FloatingAssistantDrawer';
+import type { DomflyState } from './components/companion/DomflyCharacter';
+
 import type { Camera, Room } from './types';
 
 export const App: React.FC = () => {
@@ -32,6 +36,8 @@ export const App: React.FC = () => {
   const [fullscreenCamera, setFullscreenCamera] = useState<Camera | null>(null);
   const [adminStudioOpen, setAdminStudioOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [floatingChatOpen, setFloatingChatOpen] = useState(false);
+  const [companionState, setCompanionState] = useState<DomflyState>('idle');
   const [adminStudioInitialTab, setAdminStudioInitialTab] = useState<
     'hubs' | 'floors' | 'cameras' | 'ttlock' | 'ir' | 'automations' | 'backup' | 'settings'
   >('hubs');
@@ -199,6 +205,7 @@ export const App: React.FC = () => {
                     setCurrentTab(tab);
                   }}
                   onOpenFullscreenCamera={(cam) => setFullscreenCamera(cam)}
+                  onStateChange={(st) => setCompanionState(st)}
                 />
               )}
 
@@ -234,6 +241,34 @@ export const App: React.FC = () => {
           }}
         />
       </div>
+
+      {/* Floating DOMFLY Animated 3D AI Companion (Visible across all pages) */}
+      <DomflyFloatingCompanion
+        isChatOpen={floatingChatOpen}
+        onToggleChat={() => setFloatingChatOpen((prev) => !prev)}
+        characterState={companionState}
+        currentTab={currentTab}
+      />
+
+      {/* Floating DOMFLY Assistant Chat Drawer */}
+      <FloatingAssistantDrawer
+        isOpen={floatingChatOpen}
+        onClose={() => setFloatingChatOpen(false)}
+        onSelectRoom={(roomId) => {
+          setSelectedRoomId(roomId);
+          setFloatingChatOpen(false);
+        }}
+        onNavigateToTab={(tab) => {
+          setSelectedRoomId(null);
+          setCurrentTab(tab);
+          setFloatingChatOpen(false);
+        }}
+        onOpenFullscreenCamera={(cam) => {
+          setFullscreenCamera(cam);
+          setFloatingChatOpen(false);
+        }}
+        onStateChange={(st) => setCompanionState(st)}
+      />
 
       {/* Live Admin Studio Modal */}
       {adminStudioOpen && (

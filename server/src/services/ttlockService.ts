@@ -126,6 +126,19 @@ export class TTLockService {
 
       if (data.errcode && data.errcode !== 0) {
         // Detailed mapping of TTLock error codes to user-actionable solutions
+        if (
+          data.errcode === -2012 ||
+          data.errcode === -3044 ||
+          data.errmsg?.toLowerCase().includes('not connected to any gateway') ||
+          data.description?.includes('网关')
+        ) {
+          return {
+            ok: false,
+            errcode: data.errcode,
+            message:
+              'No active G2 Gateway connected to this lock (Error -2012). Check that your TTLock G2 Gateway is plugged into power near the lock (within 5m, blue LED steady), paired in the TTLock app, and "Remote Unlock" is ON in Lock Settings.',
+          };
+        }
         if (data.errcode === -4043 || data.errmsg?.toLowerCase().includes('not supported') || data.errmsg?.toLowerCase().includes('functioning')) {
           return {
             ok: false,
@@ -142,7 +155,7 @@ export class TTLockService {
               'TTLock G2 Gateway is offline. Check that the G2 Gateway is plugged into power and connected to 2.4GHz Wi-Fi (blue LED steady).',
           };
         }
-        if (data.errcode === -4041 || data.errmsg?.toLowerCase().includes('connect')) {
+        if (data.errcode === -4041 || data.errmsg?.toLowerCase().includes('bluetooth') || data.errmsg?.toLowerCase().includes('reach')) {
           return {
             ok: false,
             errcode: data.errcode,

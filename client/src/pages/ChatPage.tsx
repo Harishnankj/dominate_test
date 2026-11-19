@@ -26,11 +26,13 @@ import {
   Video,
   Maximize2,
   Compass,
+  X,
 } from 'lucide-react';
 import { useBootstrap } from '../context/BootstrapContext';
 import { useHA } from '../context/MultiHubHomeAssistantProvider';
 import { ApiService } from '../services/api';
 import { Go2rtcVideo } from '../components/cctv/Go2rtcVideo';
+import { DomflyCharacter, DomflyState } from '../components/companion/DomflyCharacter';
 import type { Device, Z2mDevice, Camera } from '../types';
 
 interface ChatMessage {
@@ -55,12 +57,18 @@ interface ChatPageProps {
   onSelectRoom: (roomId: string) => void;
   onNavigateToTab?: (tab: string) => void;
   onOpenFullscreenCamera?: (camera: Camera) => void;
+  isFloating?: boolean;
+  onClose?: () => void;
+  onStateChange?: (state: DomflyState) => void;
 }
 
 export const ChatPage: React.FC<ChatPageProps> = ({
   onSelectRoom,
   onNavigateToTab,
   onOpenFullscreenCamera,
+  isFloating = false,
+  onClose,
+  onStateChange,
 }) => {
   const {
     data,
@@ -87,6 +95,12 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   const [speechEnabled, setSpeechEnabled] = useState(true);
   const [micPermissionState, setMicPermissionState] = useState<'prompt' | 'granted' | 'denied' | 'unknown'>('unknown');
   const [isLocalhost, setIsLocalhost] = useState(true);
+  const [companionState, setCompanionState] = useState<DomflyState>('idle');
+
+  const updateCompanionState = (st: DomflyState) => {
+    setCompanionState(st);
+    onStateChange?.(st);
+  };
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -122,6 +136,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
       recognition.onstart = () => {
         setIsListening(true);
+        updateCompanionState('listening');
       };
 
       recognition.onresult = (event: any) => {
@@ -148,6 +163,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
       recognition.onend = () => {
         setIsListening(false);
+        updateCompanionState('idle');
       };
 
       recognition.onerror = (event: any) => {
@@ -255,6 +271,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         recognitionRef.current?.stop();
       } catch (_) {}
       setIsListening(false);
+      updateCompanionState('idle');
       return;
     }
 
@@ -333,6 +350,17 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
+
+      utterance.onstart = () => {
+        updateCompanionState('speaking');
+      };
+      utterance.onend = () => {
+        updateCompanionState('idle');
+      };
+      utterance.onerror = () => {
+        updateCompanionState('idle');
+      };
+
       window.speechSynthesis.speak(utterance);
     } catch (err) {
       console.warn('[speak] error:', err);
@@ -1159,6 +1187,7 @@ export const ChatPage: React.FC<ChatPageProps> = ({
 
     setMessages((prev) => [...prev, userMsg]);
     setInputText('');
+    updateCompanionState('processing');
 
     const { reply, action, deviceCard, cameraCard } = await processCommand(text);
 
@@ -1173,92 +1202,188 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     };
 
     setMessages((prev) => [...prev, botMsg]);
-    speak(reply);
+    if (action) {
+      updateCompanionState('success');
+      setTimeout(() => {
+        speak(reply);
+      }, 500);
+    } else {
+      speak(reply);
+    }
   };
 
   handleSendMessageRef.current = handleSendMessage;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] max-w-4xl mx-auto space-y-4 pb-20 animate-in fade-in">
-      {/* Assistant Header */}
-      <div className="bg-[#191A1D] rounded-2xl p-4 border border-[#383A3E] flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-white text-slate-950 flex items-center justify-center font-bold shadow-sm">
-            <Sparkles className="w-5 h-5" />
+    <div
+      className={
+        isFloating
+          ? "flex flex-col h-full space-y-2 p-3 select-none"
+          : "flex flex-col h-[calc(100vh-140px)] max-w-4xl mx-auto space-y-4 pb-20 animate-in fade-in"
+      }
+    >
+      {/* 1. ASSISTANT HEADER */}
+      {isFloating ? (
+        /* Floating Compact Header */
+        <div className="bg-[#191A1D] rounded-2xl p-2.5 border border-[#383A3E] flex items-center justify-between shrink-0 shadow-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/40 text-purple-300 flex items-center justify-center font-bold shadow-sm overflow-hidden p-0.5">
+              <img src="/domfly_companion.png" alt="DOMFLY" className="w-full h-full object-contain pointer-events-none" />
+            </div>
+            <div>
+              <h2 className="text-xs font-bold text-[#F5F5F5] flex items-center gap-1.5">
+                {assistantName} Assistant
+                <span className="px-1.5 py-0.2 rounded text-[8px] font-mono font-bold bg-white/10 text-white border border-white/20">
+                  LOCAL
+                </span>
+              </h2>
+              <p className="text-[9px] font-mono text-[#A6A6A6]">Universal Building AI</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-sm font-bold text-[#F5F5F5] flex items-center gap-2">
-              {assistantName} Voice &amp; Device Assistant
-              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-white/10 text-white border border-white/20">
-                LOCAL FIRST
-              </span>
-            </h2>
-            <p className="text-[10px] font-mono text-[#A6A6A6]">
-              Universal Control: Zigbee • Tuya Wi-Fi • TTLock • AC IR • HA
-            </p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          {/* Mic Permission Status Button */}
-          <button
-            onClick={requestMicPermission}
-            className={`px-2.5 py-1 rounded-xl border text-[11px] font-mono font-semibold flex items-center gap-1.5 transition-all ${
-              micPermissionState === 'granted'
-                ? 'bg-[#22D68A]/10 text-[#22D68A] border-[#22D68A]/30'
-                : micPermissionState === 'denied'
-                ? 'bg-[#FF5757]/10 text-[#FF5757] border-[#FF5757]/30 animate-pulse'
-                : 'bg-[#F0B94D]/10 text-[#F0B94D] border-[#F0B94D]/30 hover:bg-[#F0B94D]/20'
-            }`}
-            title={
-              micPermissionState === 'granted'
-                ? 'Microphone is enabled for localhost:5173'
-                : micPermissionState === 'denied'
-                ? 'Microphone is blocked in browser settings. Click the tune icon in the URL bar to allow.'
-                : 'Click to grant microphone permission for localhost:5173'
-            }
-          >
-            {micPermissionState === 'granted' ? (
-              <>
-                <span className="w-2 h-2 rounded-full bg-[#22D68A] animate-pulse" />
-                <span className="hidden sm:inline">Mic Ready</span>
-              </>
-            ) : micPermissionState === 'denied' ? (
-              <>
-                <MicOff className="w-3.5 h-3.5 text-[#FF5757]" />
-                <span className="hidden sm:inline">Mic Blocked</span>
-              </>
-            ) : (
-              <>
-                <Mic className="w-3.5 h-3.5 text-[#F0B94D]" />
-                <span className="hidden sm:inline">Enable Mic</span>
-              </>
+          <div className="flex items-center gap-1.5">
+            {/* Language Toggle */}
+            <button
+              onClick={() => setLanguage(language === 'en-IN' ? 'ml-IN' : 'en-IN')}
+              className="px-2 py-1 rounded-lg bg-[#111214] border border-[#383A3E] hover:border-white/40 text-[10px] font-mono font-semibold text-white flex items-center gap-1"
+            >
+              <Languages className="w-3 h-3" />
+              {language === 'en-IN' ? 'EN' : 'ML'}
+            </button>
+
+            {/* Speech toggle */}
+            <button
+              onClick={() => setSpeechEnabled(!speechEnabled)}
+              className={`p-1 rounded-lg border transition-colors ${
+                speechEnabled
+                  ? 'bg-white text-slate-950 border-white'
+                  : 'bg-[#111214] text-[#777777] border-[#383A3E]'
+              }`}
+              title={speechEnabled ? 'Mute Voice' : 'Enable Voice'}
+            >
+              {speechEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            </button>
+
+            {/* Expand to Full Page */}
+            {onNavigateToTab && (
+              <button
+                onClick={() => onNavigateToTab('chat')}
+                className="p-1 rounded-lg bg-[#111214] text-[#A6A6A6] hover:text-white border border-[#383A3E] hover:border-white/40 transition-colors"
+                title="Expand to Full Page"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
             )}
-          </button>
 
-          {/* Language Toggle */}
-          <button
-            onClick={() => setLanguage(language === 'en-IN' ? 'ml-IN' : 'en-IN')}
-            className="px-2.5 py-1 rounded-xl bg-[#111214] border border-[#383A3E] hover:border-white/40 text-xs font-mono font-semibold text-white flex items-center gap-1.5 transition-colors"
-          >
-            <Languages className="w-3.5 h-3.5" />
-            {language === 'en-IN' ? 'English (en-IN)' : 'മലയാളം (ml-IN)'}
-          </button>
-
-          {/* Speech Audio Reply Toggle */}
-          <button
-            onClick={() => setSpeechEnabled(!speechEnabled)}
-            className={`p-1.5 rounded-xl border transition-colors ${
-              speechEnabled
-                ? 'bg-white text-slate-950 border-white'
-                : 'bg-[#111214] text-[#777777] border-[#383A3E]'
-            }`}
-            title={speechEnabled ? 'Mute Voice' : 'Enable Voice'}
-          >
-            {speechEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-          </button>
+            {/* Close Floating Drawer */}
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="p-1 rounded-lg bg-[#111214] text-[#A6A6A6] hover:text-white hover:bg-red-500/20 hover:border-red-500/40 border border-[#383A3E] transition-colors"
+                title="Close Assistant"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      ) : (
+        /* Full Assistant Page: Companion Hero Showcase with larger DOMFLY character */
+        <div className="bg-[#191A1D] rounded-3xl p-5 border border-[#383A3E] flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0 shadow-card">
+          <div className="flex-1 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-white text-slate-950 flex items-center justify-center font-bold shadow-sm">
+                <Sparkles className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-[#F5F5F5] flex items-center gap-2">
+                  {assistantName} Voice &amp; Device Assistant
+                  <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-white/10 text-white border border-white/20">
+                    LOCAL FIRST
+                  </span>
+                </h2>
+                <p className="text-[11px] font-mono text-[#A6A6A6]">
+                  Universal Control: Zigbee • Tuya Wi-Fi • TTLock • AC IR • HA
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-[#A6A6A6] leading-relaxed max-w-xl">
+              Meet DOMFLY, your friendly 3D AI companion. Speak or type to command smart lights, climate, locks, and view live camera feeds across your building.
+            </p>
+
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              {/* Mic Permission Status Button */}
+              <button
+                onClick={requestMicPermission}
+                className={`px-2.5 py-1 rounded-xl border text-[11px] font-mono font-semibold flex items-center gap-1.5 transition-all ${
+                  micPermissionState === 'granted'
+                    ? 'bg-[#22D68A]/10 text-[#22D68A] border-[#22D68A]/30'
+                    : micPermissionState === 'denied'
+                    ? 'bg-[#FF5757]/10 text-[#FF5757] border-[#FF5757]/30 animate-pulse'
+                    : 'bg-[#F0B94D]/10 text-[#F0B94D] border-[#F0B94D]/30 hover:bg-[#F0B94D]/20'
+                }`}
+                title={
+                  micPermissionState === 'granted'
+                    ? 'Microphone is enabled for localhost:5173'
+                    : micPermissionState === 'denied'
+                    ? 'Microphone is blocked in browser settings. Click the tune icon in the URL bar to allow.'
+                    : 'Click to grant microphone permission for localhost:5173'
+                }
+              >
+                {micPermissionState === 'granted' ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-[#22D68A] animate-pulse" />
+                    <span className="hidden sm:inline">Mic Ready</span>
+                  </>
+                ) : micPermissionState === 'denied' ? (
+                  <>
+                    <MicOff className="w-3.5 h-3.5 text-[#FF5757]" />
+                    <span className="hidden sm:inline">Mic Blocked</span>
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-3.5 h-3.5 text-[#F0B94D]" />
+                    <span className="hidden sm:inline">Enable Mic</span>
+                  </>
+                )}
+              </button>
+
+              {/* Language Toggle */}
+              <button
+                onClick={() => setLanguage(language === 'en-IN' ? 'ml-IN' : 'en-IN')}
+                className="px-2.5 py-1 rounded-xl bg-[#111214] border border-[#383A3E] hover:border-white/40 text-xs font-mono font-semibold text-white flex items-center gap-1.5 transition-colors"
+              >
+                <Languages className="w-3.5 h-3.5" />
+                {language === 'en-IN' ? 'English (en-IN)' : 'മലയാളം (ml-IN)'}
+              </button>
+
+              {/* Speech Audio Reply Toggle */}
+              <button
+                onClick={() => setSpeechEnabled(!speechEnabled)}
+                className={`p-1.5 rounded-xl border transition-colors ${
+                  speechEnabled
+                    ? 'bg-white text-slate-950 border-white'
+                    : 'bg-[#111214] text-[#777777] border-[#383A3E]'
+                }`}
+                title={speechEnabled ? 'Mute Voice' : 'Enable Voice'}
+              >
+                {speechEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* SIZABLE DOMFLY CHARACTER IN NATURAL EMPTY AREA OF ASSISTANT PAGE */}
+          <div className="shrink-0 flex items-center justify-center">
+            <DomflyCharacter
+              size="lg"
+              state={companionState}
+              interactive={true}
+              showStatusBadge={false}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Microphone Permission Prompt Banner */}
       {micPermissionState === 'prompt' && (

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../db/index.js';
 import { HaService } from '../services/haService.js';
 import { liveSync } from '../websocket/liveSync.js';
+import { TTLockService } from '../services/ttlockService.js';
 
 const router = Router();
 
@@ -170,6 +171,35 @@ router.post('/ha-call', async (req, res) => {
 
     const result = await HaService.callService(hub.local_url, hub.access_token, domain, service, service_data || {});
     return res.json({ ok: true, result });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Lock all building doors (TTLock and smart locks)
+router.post('/lock-all', async (_req, res) => {
+  try {
+    const config = db.prepare('SELECT ttlock_client_id, ttlock_access_token, ttlock_legacy_url FROM building_config WHERE id = 1').get() as any;
+    const ttlockDevices = db.prepare("SELECT * FROM devices WHERE type = 'ttlock'").all() as any[];
+    let locked = 0;
+    const results: any[] = [];
+
+    for (const dev of ttlockDevices) {
+      let devConfig: any = {};
+      try { devConfig = JSON.parse(dev.config_json); } catch (_) {}
+      const lockId = devConfig.lockId || dev.entity_id;
+      if (lockId && config?.ttlock_access_token) {
+        try {
+          const lockRes = await TTLockService.lock(config.ttlock_client_id, config.ttlock_access_token, lockId);
+          if (lockRes.ok) locked++;
+          results.push({ id: dev.id, name: dev.name, ...lockRes });
+        } catch (e: any) {
+          results.push({ id: dev.id, name: dev.name, ok: false, error: e.message });
+        }
+      }
+    }
+
+    return res.json({ ok: true, total: ttlockDevices.length, locked, results });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }

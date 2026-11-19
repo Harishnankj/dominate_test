@@ -47,6 +47,7 @@ import {
   AlertCircle,
   WifiOff,
   Star,
+  RotateCcw,
 } from 'lucide-react';
 import { useBootstrap } from '../../context/BootstrapContext';
 import { useAuth } from '../../context/AuthContext';
@@ -54,7 +55,8 @@ import { useHA } from '../../context/MultiHubHomeAssistantProvider';
 import { ApiService } from '../../services/api';
 import { DeviceMappingModal } from './DeviceMappingModal';
 import { IrCodeEditorModal } from './IrCodeEditorModal';
-import type { Device, DeviceType, Floor, Room, HaHub, IrProfile, Camera, Automation } from '../../types';
+import type { Device, DeviceType, Floor, Room, HaHub, IrProfile, Camera, Automation, PresetScene } from '../../types';
+import { PresetEditModal, PRESET_ICON_MAP } from '../scenes/PresetEditModal';
 
 export type AdminStudioTabType =
   | 'hubs'
@@ -531,9 +533,10 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
 
   // Automations Studio State
   const [editingAutomation, setEditingAutomation] = useState<Partial<Automation> | null>(null);
+  const [editingAdminPreset, setEditingAdminPreset] = useState<PresetScene | null>(null);
   const [autoName, setAutoName] = useState('');
   const [autoEnabled, setAutoEnabled] = useState(true);
-  const [autoTriggerType, setAutoTriggerType] = useState<'time' | 'manual' | 'presence'>('time');
+  const [autoTriggerType, setAutoTriggerType] = useState<'time' | 'manual' | 'presence' | 'cyclic'>('time');
   const [autoTriggerTime, setAutoTriggerTime] = useState('09:00');
   const [autoTriggerDays, setAutoTriggerDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [autoTriggerDeviceId, setAutoTriggerDeviceId] = useState('');
@@ -541,8 +544,19 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
   const [runningAutoId, setRunningAutoId] = useState<string | null>(null);
   const [savingAutomation, setSavingAutomation] = useState(false);
 
+  // Cyclic Auto-Cutoff Routine State (Duty Cycle)
+  const [cyclicDeviceId, setCyclicDeviceId] = useState('');
+  const [cyclicOnMinutes, setCyclicOnMinutes] = useState(180); // Default 3 hours = 180 min
+  const [cyclicOffMinutes, setCyclicOffMinutes] = useState(15); // Default 15 min cutoff rest
+  const [cyclicAllDay, setCyclicAllDay] = useState(true);
+  const [cyclicStartTime, setCyclicStartTime] = useState('09:00');
+  const [cyclicEndTime, setCyclicEndTime] = useState('18:00');
+  const [cyclicDays, setCyclicDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [cyclicResumeTemp, setCyclicResumeTemp] = useState(24);
+
   const handleNewAutomation = () => {
     const defaultDevId = data?.devices?.[0]?.id || '';
+    const acDev = data?.devices?.find((d) => d.type === 'ac_ir' || d.type === 'climate') || data?.devices?.[0];
     setEditingAutomation({});
     setAutoName('');
     setAutoEnabled(true);
@@ -551,6 +565,14 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
     setAutoTriggerDays([1, 2, 3, 4, 5]);
     const presenceDev = data?.devices?.find((d) => d.type === 'presence_sensor');
     setAutoTriggerDeviceId(presenceDev ? presenceDev.id : defaultDevId);
+    setCyclicDeviceId(acDev ? acDev.id : defaultDevId);
+    setCyclicOnMinutes(180);
+    setCyclicOffMinutes(15);
+    setCyclicAllDay(true);
+    setCyclicStartTime('09:00');
+    setCyclicEndTime('18:00');
+    setCyclicDays([1, 2, 3, 4, 5]);
+    setCyclicResumeTemp(24);
     setAutoSteps(defaultDevId ? [{ device_id: defaultDevId, action: 'turn_on' }] : []);
   };
 
@@ -571,6 +593,16 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
     } else if (tr.type === 'presence') {
       setAutoTriggerType('presence');
       setAutoTriggerDeviceId(tr.device_id || (data?.devices?.[0]?.id || ''));
+    } else if (tr.type === 'cyclic' || tr.type === 'interval') {
+      setAutoTriggerType('cyclic');
+      setCyclicDeviceId(tr.device_id || (data?.devices?.[0]?.id || ''));
+      setCyclicOnMinutes(tr.on_minutes !== undefined ? Number(tr.on_minutes) : 180);
+      setCyclicOffMinutes(tr.off_minutes !== undefined ? Number(tr.off_minutes) : 15);
+      setCyclicAllDay(tr.all_day !== undefined ? Boolean(tr.all_day) : true);
+      setCyclicStartTime(tr.start_time || '09:00');
+      setCyclicEndTime(tr.end_time || '18:00');
+      setCyclicDays(Array.isArray(tr.days) ? tr.days : [1, 2, 3, 4, 5]);
+      setCyclicResumeTemp(tr.resume_temp !== undefined ? Number(tr.resume_temp) : 24);
     } else {
       setAutoTriggerType('manual');
     }
@@ -594,7 +626,7 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
       showStatus('Please enter an automation name', true);
       return;
     }
-    if (autoSteps.length === 0) {
+    if (autoTriggerType !== 'cyclic' && autoSteps.length === 0) {
       showStatus('Please add at least one action step', true);
       return;
     }
@@ -604,14 +636,38 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
         ? { type: 'time', time: autoTriggerTime, days: autoTriggerDays }
         : autoTriggerType === 'presence'
         ? { type: 'presence', device_id: autoTriggerDeviceId, state: 'on' }
+        : autoTriggerType === 'cyclic'
+        ? {
+            type: 'cyclic',
+            device_id: cyclicDeviceId || (data?.devices?.[0]?.id || ''),
+            on_minutes: Number(cyclicOnMinutes) || 180,
+            off_minutes: Number(cyclicOffMinutes) || 15,
+            all_day: cyclicAllDay,
+            start_time: cyclicStartTime,
+            end_time: cyclicEndTime,
+            days: cyclicDays,
+            resume_temp: Number(cyclicResumeTemp) || 24,
+          }
         : { type: 'manual' };
+
+    const targetSteps =
+      autoTriggerType === 'cyclic'
+        ? [
+            { device_id: cyclicDeviceId || (data?.devices?.[0]?.id || ''), action: 'turn_off' },
+            {
+              device_id: cyclicDeviceId || (data?.devices?.[0]?.id || ''),
+              action: 'turn_on',
+              value: { temp: Number(cyclicResumeTemp) || 24 },
+            },
+          ]
+        : autoSteps;
 
     const payload = {
       name: autoName.trim(),
       enabled: autoEnabled ? 1 : 0,
       trigger,
-      actions: autoSteps,
-      steps: autoSteps,
+      actions: targetSteps,
+      steps: targetSteps,
     };
 
     setSavingAutomation(true);
@@ -3780,6 +3836,58 @@ advanced:
                 </button>
               </div>
 
+              {/* Architectural Presets & Building Scenes (Customizable) */}
+              <div className="glass-panel p-5 rounded-2xl border border-white/10 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Architectural Environment Presets</h4>
+                      <p className="text-xs text-slate-400">
+                        One-touch building scene profiles actuated on Dashboard and Scenes page
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-mono text-cyan-400 font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20">
+                    {(data?.presets || []).length} Presets Configured
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+                  {(data?.presets || []).map((preset) => {
+                    const IconComp = PRESET_ICON_MAP[preset.icon] || Sparkles;
+                    const colorClass = preset.accent_color || 'text-white';
+                    return (
+                      <div
+                        key={preset.id}
+                        className="p-4 rounded-xl bg-slate-900/60 border border-white/5 hover:border-cyan-500/40 transition-all flex flex-col justify-between gap-3"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="w-8 h-8 rounded-lg bg-slate-950 border border-white/10 flex items-center justify-center">
+                              <IconComp className={`w-4 h-4 ${colorClass}`} />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setEditingAdminPreset(preset)}
+                              className="px-2 py-1 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-slate-300 hover:text-cyan-300 border border-white/10 text-[11px] font-semibold flex items-center gap-1 transition-all"
+                            >
+                              <Edit className="w-3 h-3" /> Edit
+                            </button>
+                          </div>
+                          <div>
+                            <h5 className="font-bold text-xs text-white">{preset.name}</h5>
+                            <p className="text-[11px] text-slate-400 line-clamp-2 mt-0.5">{preset.desc}</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Add / Edit Automation Form */}
               {editingAutomation && (
                 <form
@@ -3834,7 +3942,7 @@ advanced:
                       Trigger Type
                     </label>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                       <button
                         type="button"
                         onClick={() => setAutoTriggerType('time')}
@@ -3849,6 +3957,23 @@ advanced:
                         </div>
                         <p className="text-[11px] text-slate-400 leading-snug">
                           Runs automatically at a specific time (cron)
+                        </p>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAutoTriggerType('cyclic')}
+                        className={`p-3 rounded-xl border text-left transition-all ${
+                          autoTriggerType === 'cyclic'
+                            ? 'bg-amber-400/20 border-amber-400 text-white font-bold shadow-glow ring-1 ring-amber-400/40'
+                            : 'bg-slate-950/40 border-white/10 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 text-xs font-bold mb-1">
+                          <RotateCcw className="w-4 h-4 text-amber-400" /> Cyclic Auto-Cutoff
+                        </div>
+                        <p className="text-[11px] text-slate-400 leading-snug">
+                          Auto cutoff after running X hrs, rest Y mins, then resume
                         </p>
                       </button>
 
@@ -3886,6 +4011,241 @@ advanced:
                         </p>
                       </button>
                     </div>
+
+                    {/* Cyclic Auto-Cutoff Configuration */}
+                    {autoTriggerType === 'cyclic' && (
+                      <div className="pt-2 space-y-4 animate-in fade-in">
+                        <div className="p-3.5 rounded-xl bg-amber-400/10 border border-amber-400/20 text-xs text-amber-300 leading-relaxed flex items-start gap-2.5">
+                          <RotateCcw className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                          <div>
+                            <strong>Cyclic Duty-Cycle Routine:</strong> Tracks how long the target device runs continuously. After running for your configured ON duration (e.g., 3 hours), it automatically cuts OFF for the rest interval (e.g., 15 minutes) to protect equipment and save power, then powers back ON automatically.
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-300 mb-1">
+                            Monitored Target Device (AC, Switch, Relay, or Meter) *
+                          </label>
+                          <select
+                            value={cyclicDeviceId}
+                            onChange={(e) => setCyclicDeviceId(e.target.value)}
+                            className="w-full glass-input rounded-xl px-3 py-2 text-xs text-white"
+                          >
+                            {(data?.devices || []).map((d) => {
+                              const room = (data?.rooms || []).find((r) => r.id === d.room_id);
+                              const isAc = d.type === 'ac_ir' || d.type === 'climate';
+                              return (
+                                <option key={d.id} value={d.id} className="bg-slate-900">
+                                  {room ? `${room.name} • ` : ''}{d.name} ({d.type}){isAc ? ' [AC/Climate]' : ''}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {/* 1. ON Duration */}
+                          <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-2">
+                            <label className="block text-xs font-bold text-white flex items-center justify-between">
+                              <span>Continuous Run Time (ON Duration)</span>
+                              <span className="text-amber-400 font-mono">
+                                {Math.floor(cyclicOnMinutes / 60)}h {cyclicOnMinutes % 60}m ({cyclicOnMinutes} mins)
+                              </span>
+                            </label>
+                            <p className="text-[11px] text-slate-400">
+                              Device runs continuously for this duration before auto-cutoff triggers.
+                            </p>
+                            <div className="flex items-center gap-2 pt-1">
+                              <input
+                                type="number"
+                                min="1"
+                                max="1440"
+                                value={cyclicOnMinutes}
+                                onChange={(e) => setCyclicOnMinutes(Math.max(1, Number(e.target.value)))}
+                                className="w-24 glass-input rounded-lg px-2.5 py-1.5 text-xs text-white font-mono text-center font-bold"
+                              />
+                              <span className="text-xs text-slate-400">minutes</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {[
+                                { label: '1 Hour', mins: 60 },
+                                { label: '2 Hours', mins: 120 },
+                                { label: '3 Hours (Default)', mins: 180 },
+                                { label: '4 Hours', mins: 240 },
+                              ].map((preset) => (
+                                <button
+                                  key={preset.mins}
+                                  type="button"
+                                  onClick={() => setCyclicOnMinutes(preset.mins)}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                                    cyclicOnMinutes === preset.mins
+                                      ? 'bg-amber-400 text-slate-950 font-bold shadow-sm'
+                                      : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  {preset.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* 2. Cutoff / Rest Duration */}
+                          <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-2">
+                            <label className="block text-xs font-bold text-white flex items-center justify-between">
+                              <span>Cutoff / Rest Period (OFF Duration)</span>
+                              <span className="text-cyan-400 font-mono">{cyclicOffMinutes} mins</span>
+                            </label>
+                            <p className="text-[11px] text-slate-400">
+                              Device turns OFF to rest/cool down, then automatically resumes ON.
+                            </p>
+                            <div className="flex items-center gap-2 pt-1">
+                              <input
+                                type="number"
+                                min="1"
+                                max="360"
+                                value={cyclicOffMinutes}
+                                onChange={(e) => setCyclicOffMinutes(Math.max(1, Number(e.target.value)))}
+                                className="w-24 glass-input rounded-lg px-2.5 py-1.5 text-xs text-white font-mono text-center font-bold"
+                              />
+                              <span className="text-xs text-slate-400">minutes</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {[
+                                { label: '5 Mins', mins: 5 },
+                                { label: '10 Mins', mins: 10 },
+                                { label: '15 Mins (Default)', mins: 15 },
+                                { label: '20 Mins', mins: 20 },
+                                { label: '30 Mins', mins: 30 },
+                              ].map((preset) => (
+                                <button
+                                  key={preset.mins}
+                                  type="button"
+                                  onClick={() => setCyclicOffMinutes(preset.mins)}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                                    cyclicOffMinutes === preset.mins
+                                      ? 'bg-cyan-400 text-slate-950 font-bold shadow-sm'
+                                      : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
+                                  }`}
+                                >
+                                  {preset.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* AC Resume Temperature */}
+                        {((data?.devices || []).find((d) => d.id === cyclicDeviceId)?.type === 'ac_ir' ||
+                          (data?.devices || []).find((d) => d.id === cyclicDeviceId)?.type === 'climate') && (
+                          <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/5 flex items-center justify-between gap-4">
+                            <div>
+                              <label className="text-xs font-bold text-white block">AC Resume Temperature</label>
+                              <span className="text-[11px] text-slate-400">Target temperature when AC turns back ON after rest</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="range"
+                                min="18"
+                                max="28"
+                                value={cyclicResumeTemp}
+                                onChange={(e) => setCyclicResumeTemp(Number(e.target.value))}
+                                className="w-28 accent-cyan-400 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+                              />
+                              <span className="font-mono text-xs font-bold text-cyan-400 w-12 text-right">
+                                {cyclicResumeTemp}°C
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Operating Window: All Day vs Specific Hours */}
+                        <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-white">Active Operating Window</label>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setCyclicAllDay(true)}
+                                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                                  cyclicAllDay ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white bg-slate-900'
+                                }`}
+                              >
+                                All Day (24/7)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setCyclicAllDay(false)}
+                                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                                  !cyclicAllDay ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white bg-slate-900'
+                                }`}
+                              >
+                                Custom Hours
+                              </button>
+                            </div>
+                          </div>
+
+                          {!cyclicAllDay && (
+                            <div className="space-y-3 pt-2 border-t border-white/5">
+                              <div className="flex items-center gap-4">
+                                <div>
+                                  <label className="block text-[11px] text-slate-400 mb-1">Start Time</label>
+                                  <input
+                                    type="time"
+                                    value={cyclicStartTime}
+                                    onChange={(e) => setCyclicStartTime(e.target.value)}
+                                    className="glass-input rounded-xl px-3 py-1.5 text-xs text-white font-mono"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] text-slate-400 mb-1">End Time</label>
+                                  <input
+                                    type="time"
+                                    value={cyclicEndTime}
+                                    onChange={(e) => setCyclicEndTime(e.target.value)}
+                                    className="glass-input rounded-xl px-3 py-1.5 text-xs text-white font-mono"
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-[11px] text-slate-400 mb-1">Active Days</label>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {[
+                                    { day: 1, label: 'Mon' },
+                                    { day: 2, label: 'Tue' },
+                                    { day: 3, label: 'Wed' },
+                                    { day: 4, label: 'Thu' },
+                                    { day: 5, label: 'Fri' },
+                                    { day: 6, label: 'Sat' },
+                                    { day: 0, label: 'Sun' },
+                                  ].map((d) => {
+                                    const isSelected = cyclicDays.includes(d.day);
+                                    return (
+                                      <button
+                                        key={d.day}
+                                        type="button"
+                                        onClick={() => {
+                                          if (cyclicDays.includes(d.day)) {
+                                            if (cyclicDays.length > 1) setCyclicDays(cyclicDays.filter((x) => x !== d.day));
+                                          } else {
+                                            setCyclicDays([...cyclicDays, d.day].sort());
+                                          }
+                                        }}
+                                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                                          isSelected ? 'bg-cyan-500 text-slate-950 font-bold' : 'bg-slate-800 text-slate-400 hover:text-white'
+                                        }`}
+                                      >
+                                        {d.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {autoTriggerType === 'time' && (
                       <div className="pt-2 space-y-3">
@@ -3972,90 +4332,130 @@ advanced:
                     )}
                   </div>
 
-                  {/* Action Steps */}
-                  <div className="space-y-3 pt-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-cyan-400 uppercase tracking-wider">
-                        Action Steps ({autoSteps.length})
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const firstDevId = (data?.devices || [])[0]?.id || '';
-                          setAutoSteps([...autoSteps, { device_id: firstDevId, action: 'turn_on' }]);
-                        }}
-                        className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 bg-cyan-500/10 px-2.5 py-1 rounded-lg border border-cyan-500/20"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> Add Step
-                      </button>
-                    </div>
-
-                    <div className="space-y-2.5">
-                      {autoSteps.map((st, idx) => (
-                        <div
-                          key={idx}
-                          className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 bg-slate-900/80 p-3 rounded-xl border border-white/5"
-                        >
-                          <span className="text-xs font-mono text-slate-500 font-bold w-5 shrink-0 text-center">
-                            {idx + 1}
-                          </span>
-
-                          <select
-                            value={st.device_id}
-                            onChange={(e) => {
-                              const next = [...autoSteps];
-                              next[idx].device_id = e.target.value;
-                              const availableActions = getActionOptionsForDevice(e.target.value);
-                              if (availableActions.length > 0 && !availableActions.some((a) => a.value === next[idx].action)) {
-                                next[idx].action = availableActions[0].value;
-                              }
-                              setAutoSteps(next);
-                            }}
-                            className="flex-1 min-w-[200px] glass-input rounded-lg px-2.5 py-1.5 text-xs text-white"
-                          >
-                            {(data?.devices || []).map((d) => {
-                              const room = (data?.rooms || []).find((r) => r.id === d.room_id);
-                              return (
-                                <option key={d.id} value={d.id} className="bg-slate-900">
-                                  {room ? `${room.name} • ` : ''}{d.name} ({d.type})
-                                </option>
-                              );
-                            })}
-                          </select>
-
-                          <select
-                            value={st.action}
-                            onChange={(e) => {
-                              const next = [...autoSteps];
-                              next[idx].action = e.target.value;
-                              setAutoSteps(next);
-                            }}
-                            className="w-36 glass-input rounded-lg px-2.5 py-1.5 text-xs text-white font-mono"
-                          >
-                            {getActionOptionsForDevice(st.device_id).map((opt) => (
-                              <option key={opt.value} value={opt.value} className="bg-slate-900">
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
-
-                          <button
-                            type="button"
-                            onClick={() => setAutoSteps(autoSteps.filter((_, i) => i !== idx))}
-                            className="p-1.5 text-rose-400 hover:text-rose-300 rounded-lg hover:bg-rose-500/10 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                  {/* Action Steps or Cyclic Automated Sequence */}
+                  {autoTriggerType === 'cyclic' ? (
+                    <div className="p-4 rounded-xl bg-slate-900/90 border border-amber-400/20 space-y-3 pt-2">
+                      <div className="flex items-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-wider">
+                        <RotateCcw className="w-4 h-4 text-amber-400" />
+                        <span>Automated Duty-Cycle Actuation Routine</span>
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        The background scheduler automatically controls{' '}
+                        <strong className="text-white">
+                          {(data?.devices || []).find((d) => d.id === cyclicDeviceId)?.name || 'target device'}
+                        </strong>{' '}
+                        locally with zero manual action steps required:
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                        <div className="p-3 rounded-xl bg-black/50 border border-white/5 space-y-1">
+                          <span className="text-[10px] font-mono text-amber-400 font-bold uppercase block">1. Run Phase</span>
+                          <p className="text-slate-300">
+                            Tracks continuous run time up to{' '}
+                            <span className="text-amber-300 font-bold">
+                              {Math.floor(cyclicOnMinutes / 60)}h {cyclicOnMinutes % 60}m
+                            </span>
+                          </p>
                         </div>
-                      ))}
-
-                      {autoSteps.length === 0 && (
-                        <p className="text-xs text-slate-500 italic p-3 text-center border border-dashed border-white/10 rounded-xl">
-                          No steps added yet. Click &quot;Add Step&quot; above to add device actions.
-                        </p>
-                      )}
+                        <div className="p-3 rounded-xl bg-black/50 border border-white/5 space-y-1">
+                          <span className="text-[10px] font-mono text-rose-400 font-bold uppercase block">2. Auto-Cutoff</span>
+                          <p className="text-slate-300">
+                            Automatically powers <span className="text-rose-400 font-bold">OFF</span> for{' '}
+                            <span className="text-cyan-300 font-bold">{cyclicOffMinutes} min</span> rest
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-xl bg-black/50 border border-white/5 space-y-1">
+                          <span className="text-[10px] font-mono text-emerald-400 font-bold uppercase block">3. Auto-Resume</span>
+                          <p className="text-slate-300">
+                            Automatically powers <span className="text-emerald-400 font-bold">ON</span> to repeat routine
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="space-y-3 pt-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-cyan-400 uppercase tracking-wider">
+                          Action Steps ({autoSteps.length})
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const firstDevId = (data?.devices || [])[0]?.id || '';
+                            setAutoSteps([...autoSteps, { device_id: firstDevId, action: 'turn_on' }]);
+                          }}
+                          className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 bg-cyan-500/10 px-2.5 py-1 rounded-lg border border-cyan-500/20"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Add Step
+                        </button>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        {autoSteps.map((st, idx) => (
+                          <div
+                            key={idx}
+                            className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 bg-slate-900/80 p-3 rounded-xl border border-white/5"
+                          >
+                            <span className="text-xs font-mono text-slate-500 font-bold w-5 shrink-0 text-center">
+                              {idx + 1}
+                            </span>
+
+                            <select
+                              value={st.device_id}
+                              onChange={(e) => {
+                                const next = [...autoSteps];
+                                next[idx].device_id = e.target.value;
+                                const availableActions = getActionOptionsForDevice(e.target.value);
+                                if (availableActions.length > 0 && !availableActions.some((a) => a.value === next[idx].action)) {
+                                  next[idx].action = availableActions[0].value;
+                                }
+                                setAutoSteps(next);
+                              }}
+                              className="flex-1 min-w-[200px] glass-input rounded-lg px-2.5 py-1.5 text-xs text-white"
+                            >
+                              {(data?.devices || []).map((d) => {
+                                const room = (data?.rooms || []).find((r) => r.id === d.room_id);
+                                return (
+                                  <option key={d.id} value={d.id} className="bg-slate-900">
+                                    {room ? `${room.name} • ` : ''}{d.name} ({d.type})
+                                  </option>
+                                );
+                              })}
+                            </select>
+
+                            <select
+                              value={st.action}
+                              onChange={(e) => {
+                                const next = [...autoSteps];
+                                next[idx].action = e.target.value;
+                                setAutoSteps(next);
+                              }}
+                              className="w-36 glass-input rounded-lg px-2.5 py-1.5 text-xs text-white font-mono"
+                            >
+                              {getActionOptionsForDevice(st.device_id).map((opt) => (
+                                <option key={opt.value} value={opt.value} className="bg-slate-900">
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+
+                            <button
+                              type="button"
+                              onClick={() => setAutoSteps(autoSteps.filter((_, i) => i !== idx))}
+                              className="p-1.5 text-rose-400 hover:text-rose-300 rounded-lg hover:bg-rose-500/10 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+
+                        {autoSteps.length === 0 && (
+                          <p className="text-xs text-slate-500 italic p-3 text-center border border-dashed border-white/10 rounded-xl">
+                            No steps added yet. Click &quot;Add Step&quot; above to add device actions.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Form Action Buttons */}
                   <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-white/10">
@@ -4131,6 +4531,10 @@ advanced:
                                 <>
                                   <Clock className="w-3 h-3" /> Daily at {tr.time}
                                 </>
+                              ) : tr.type === 'cyclic' || tr.type === 'interval' ? (
+                                <>
+                                  <RotateCcw className="w-3 h-3 text-amber-400" /> Auto-Cutoff ({Math.floor((tr.on_minutes || 180) / 60)}h {(tr.on_minutes || 180) % 60 > 0 ? `${(tr.on_minutes || 180) % 60}m ` : ''}ON → {tr.off_minutes || 15}m Rest)
+                                </>
                               ) : tr.type === 'presence' ? (
                                 <>
                                   <Radio className="w-3 h-3 text-emerald-400" /> Sensor Trigger
@@ -4142,9 +4546,50 @@ advanced:
                               )}
                             </span>
 
-                            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-white/5">
-                              {stepCount} {stepCount === 1 ? 'Action Step' : 'Action Steps'}
-                            </span>
+                            {tr.type === 'cyclic' ? (
+                              (() => {
+                                const targetDev = (data?.devices || []).find((d) => d.id === tr.device_id);
+                                let tracking: any = null;
+                                try {
+                                  if (auto.last_trigger_state_key) tracking = JSON.parse(auto.last_trigger_state_key);
+                                } catch (_) {}
+
+                                return (
+                                  <>
+                                    {targetDev && (
+                                      <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-white/5">
+                                        Device: <span className="text-white font-bold">{targetDev.name}</span>
+                                      </span>
+                                    )}
+
+                                    {tracking && tracking.phase === 'RUNNING' && (
+                                      <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 flex items-center gap-1.5 font-bold">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                        Running: {tracking.elapsed_mins || 0}m / {tr.on_minutes}m (Cutoff in ~{tracking.remaining_on_mins ?? Math.max(0, tr.on_minutes - (tracking.elapsed_mins || 0))}m)
+                                      </span>
+                                    )}
+
+                                    {tracking && tracking.phase === 'CUTOFF' && (
+                                      <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 flex items-center gap-1.5 font-bold animate-pulse">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                                        Resting: {tracking.elapsed_rest_mins || 0}m / {tr.off_minutes}m (Resumes in ~{tracking.remaining_rest_mins ?? Math.max(0, tr.off_minutes - (tracking.elapsed_rest_mins || 0))}m)
+                                      </span>
+                                    )}
+
+                                    {(!tracking || tracking.phase === 'IDLE') && (
+                                      <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-900/60 text-slate-400 border border-white/5 flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                        Device is OFF (Cycle starts when turned ON)
+                                      </span>
+                                    )}
+                                  </>
+                                );
+                              })()
+                            ) : (
+                              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-white/5">
+                                {stepCount} {stepCount === 1 ? 'Action Step' : 'Action Steps'}
+                              </span>
+                            )}
 
                             <span className="text-[11px] text-slate-400 font-mono">
                               {auto.last_run_at
@@ -5267,6 +5712,13 @@ advanced:
           </div>
         </div>
       )}
+
+      {/* Preset Scene Customization Modal */}
+      <PresetEditModal
+        isOpen={!!editingAdminPreset}
+        preset={editingAdminPreset}
+        onClose={() => setEditingAdminPreset(null)}
+      />
     </div>
   );
 };

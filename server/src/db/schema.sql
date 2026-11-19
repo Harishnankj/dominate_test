@@ -163,6 +163,18 @@ CREATE TABLE IF NOT EXISTS virtual_device_states (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS preset_scenes (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  desc TEXT NOT NULL,
+  icon TEXT NOT NULL DEFAULT 'Sun',
+  accent_color TEXT DEFAULT 'text-[#F0B94D]',
+  actions_json TEXT NOT NULL DEFAULT '[]',
+  is_active INTEGER DEFAULT 1,
+  sort_order INTEGER DEFAULT 0,
+  updated_at TEXT
+);
+
 -- Indexing for fast lookups
 CREATE INDEX IF NOT EXISTS idx_rooms_floor ON rooms(floor_id);
 CREATE INDEX IF NOT EXISTS idx_devices_room ON devices(room_id);

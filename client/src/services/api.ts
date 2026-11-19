@@ -1,4 +1,4 @@
-import type { BootstrapData, BuildingConfig, Floor, Room, Device, Camera, IrProfile, Automation, User } from '../types';
+import type { BootstrapData, BuildingConfig, Floor, Room, Device, Camera, IrProfile, Automation, PresetScene, User } from '../types';
 
 export class ApiService {
   private static async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -383,6 +383,23 @@ export class ApiService {
 
   static async runAutomation(id: string): Promise<{ ok: boolean; success: boolean; executedSteps: number }> {
     return this.request(`/api/automations/${id}/run`, { method: 'POST' });
+  }
+
+  // Architectural Presets & Building Scenes
+  static async fetchPresets(): Promise<{ ok: boolean; presets: PresetScene[] }> {
+    return this.request('/api/presets');
+  }
+
+  static async updatePreset(id: string, data: Partial<PresetScene>): Promise<{ ok: boolean; message?: string }> {
+    return this.request(`/api/presets/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  static async runPreset(id: string): Promise<{ ok: boolean; success: boolean; name?: string; executedActions?: number }> {
+    return this.request(`/api/presets/${id}/run`, { method: 'POST' });
+  }
+
+  static async resetPreset(id: string): Promise<{ ok: boolean; message?: string }> {
+    return this.request(`/api/presets/${id}/reset`, { method: 'POST' });
   }
 
   // Zigbee2MQTT / MQTT

@@ -11,6 +11,7 @@ import {
   Plus,
   ArrowRight,
   Sparkles,
+  RotateCcw,
 } from 'lucide-react';
 import { useBootstrap } from '../context/BootstrapContext';
 import { useAuth } from '../context/AuthContext';
@@ -93,6 +94,11 @@ export const AutomationsPage: React.FC<AutomationsPageProps> = ({
         return `${dayNames} at ${tr.time}`;
       }
       return `Daily at ${tr.time || '--:--'}`;
+    }
+    if (tr.type === 'cyclic' || tr.type === 'interval') {
+      const onH = Math.floor((tr.on_minutes || 180) / 60);
+      const onM = (tr.on_minutes || 180) % 60;
+      return `Auto-Cutoff (${onH > 0 ? `${onH}h ` : ''}${onM > 0 ? `${onM}m ` : ''}ON → ${tr.off_minutes || 15}m Rest)`;
     }
     if (tr.type === 'presence') {
       return 'Motion / Presence Sensor';
@@ -224,23 +230,50 @@ export const AutomationsPage: React.FC<AutomationsPageProps> = ({
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#111214] text-[#F5F5F5] border border-[#383A3E] flex items-center gap-1.5">
                       {tr.type === 'time' ? (
                         <Clock className="w-3 h-3 text-[#F0B94D]" />
+                      ) : tr.type === 'cyclic' || tr.type === 'interval' ? (
+                        <RotateCcw className="w-3 h-3 text-[#F0B94D]" />
                       ) : (
                         <Radio className="w-3 h-3 text-[#22D68A]" />
                       )}
                       <span>{formatSchedule(tr)}</span>
                     </span>
 
-                    {/* Action Count */}
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#111214] text-[#A6A6A6] border border-[#383A3E]">
-                      {stepCount} {stepCount === 1 ? 'Action' : 'Actions'}
-                    </span>
+                    {/* Cyclic Live Tracking or Action Count */}
+                    {tr.type === 'cyclic' ? (
+                      (() => {
+                        let tracking: any = null;
+                        try {
+                          if (auto.last_trigger_state_key) tracking = JSON.parse(auto.last_trigger_state_key);
+                        } catch (_) {}
 
-                    {/* Last Run Time */}
-                    <span className="text-[10px] font-mono text-[#777777]">
-                      {auto.last_run_at
-                        ? `Ran ${new Date(auto.last_run_at).toLocaleTimeString()}`
-                        : 'Standby'}
-                    </span>
+                        if (tracking && tracking.phase === 'RUNNING') {
+                          return (
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#F0B94D]/10 text-[#F0B94D] border border-[#F0B94D]/30 flex items-center gap-1.5 font-bold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#F0B94D] animate-pulse" />
+                              Running: {tracking.elapsed_mins || 0}m / {tr.on_minutes}m
+                            </span>
+                          );
+                        }
+                        if (tracking && tracking.phase === 'CUTOFF') {
+                          return (
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#22D68A]/10 text-[#22D68A] border border-[#22D68A]/30 flex items-center gap-1.5 font-bold animate-pulse">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#22D68A] animate-ping" />
+                              Resting: {tracking.elapsed_rest_mins || 0}m / {tr.off_minutes}m
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#111214] text-[#777777] border border-[#383A3E] flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#777777]" />
+                            Device OFF (Cycle begins when powered ON)
+                          </span>
+                        );
+                      })()
+                    ) : (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#111214] text-[#A6A6A6] border border-[#383A3E]">
+                        {stepCount} {stepCount === 1 ? 'Action' : 'Actions'}
+                      </span>
+                    )}
                   </div>
                 </div>
 

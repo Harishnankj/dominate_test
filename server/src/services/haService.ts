@@ -19,6 +19,53 @@ export interface DiscoveredEntity {
 }
 
 export class HaService {
+  // In-memory state cache to prevent spamming HA REST API while maintaining real-time freshness
+  private static entityStateCache = new Map<string, { state: string; timestamp: number }>();
+
+  /**
+   * Get live entity state (e.g. 'on', 'off', 'cool', etc.) from Home Assistant with short-lived cache
+   */
+  static async getEntityState(baseUrl: string, token: string, entityId: string): Promise<string | null> {
+    if (!baseUrl || !token || !entityId) return null;
+    const cleanUrl = baseUrl.replace(/\/+$/, '');
+    const cacheKey = `${cleanUrl}::${entityId}`;
+    const cached = this.entityStateCache.get(cacheKey);
+    const now = Date.now();
+    // Cache for 4 seconds
+    if (cached && now - cached.timestamp < 4000) {
+      return cached.state;
+    }
+
+    try {
+      const res = await fetch(`${cleanUrl}/api/states/${encodeURIComponent(entityId)}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(3500),
+      });
+
+      if (!res.ok) return null;
+      const data = (await res.json()) as any;
+      const stateStr = data?.state !== undefined ? String(data.state) : null;
+      if (stateStr !== null) {
+        this.entityStateCache.set(cacheKey, { state: stateStr, timestamp: now });
+      }
+      return stateStr;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static invalidateEntityState(baseUrl: string, entityId?: string) {
+    if (!entityId) {
+      this.entityStateCache.clear();
+      return;
+    }
+    const cleanUrl = baseUrl.replace(/\/+$/, '');
+    this.entityStateCache.delete(`${cleanUrl}::${entityId}`);
+  }
+
   /**
    * Test connection to Home Assistant using REST API
    */
@@ -188,6 +235,10 @@ export class HaService {
       },
       body: JSON.stringify(serviceData),
     });
+
+    if (serviceData?.entity_id) {
+      this.invalidateEntityState(baseUrl, serviceData.entity_id);
+    }
 
     if (!res.ok) {
       const txt = await res.text();

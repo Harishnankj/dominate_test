@@ -45,19 +45,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab, onO
     <aside className="w-[260px] h-screen bg-[#111214] border-r border-[#383A3E] flex flex-col justify-between flex-shrink-0 select-none overflow-y-auto scrollbar-none">
       {/* Top Branding Section */}
       <div>
-        <div className="p-5 border-b border-[#383A3E]/80 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-white text-[#090A0C] flex items-center justify-center font-black text-xl shadow-sm tracking-tighter">
-            D
-          </div>
+        <div className="p-4 border-b border-[#383A3E]/80 flex items-center gap-3">
+          <img
+            src="/domios_logo.png"
+            alt="DOMIOS Logo"
+            className="w-11 h-11 object-contain drop-shadow-md shrink-0"
+          />
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="font-extrabold text-sm tracking-wider text-[#F5F5F5] uppercase">
-                DOMINATE
+              <span className="font-black text-base tracking-wider text-[#F5F5F5] uppercase">
+                DOMIOS
               </span>
               <span className="w-1.5 h-1.5 rounded-full bg-[#22D68A] animate-pulse" />
             </div>
-            <p className="text-[10px] font-mono tracking-widest text-[#777777] uppercase">
-              Smart Building OS
+            <p className="text-[10px] font-mono tracking-widest text-[#777777] uppercase font-semibold">
+              BY DOMINATEE
             </p>
           </div>
         </div>

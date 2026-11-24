@@ -833,7 +833,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#111214]/80 border border-[#383A3E] text-[#A6A6A6]">
                     {data?.floors?.find((f) => f.id === room.floor_id)?.name || 'Floor 1'}
                   </span>
-                  <div className="w-2 h-2 rounded-full bg-[#22D68A]" />
+                  <div className="flex items-center gap-1.5">
+                    {allCameras.some((c) => c.room_id === room.id) && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-cyan-950/80 text-cyan-400 border border-cyan-800/40 flex items-center gap-1">
+                        <Video className="w-2.5 h-2.5" /> CCTV
+                      </span>
+                    )}
+                    <div className="w-2 h-2 rounded-full bg-[#22D68A]" />
+                  </div>
                 </div>
 
                 <div className="relative z-10 space-y-1">

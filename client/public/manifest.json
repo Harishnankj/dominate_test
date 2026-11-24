@@ -1,11 +1,16 @@
 {
-  "short_name": "DOMINATEE",
-  "name": "DOMINATEE Building OS",
+  "short_name": "DOMIOS",
+  "name": "DOMIOS by DOMINATEE",
   "icons": [
+    {
+      "src": "/domios_logo.png",
+      "type": "image/png",
+      "sizes": "512x512 192x192"
+    },
     {
       "src": "/logo.svg",
       "type": "image/svg+xml",
-      "sizes": "192x192 512x512"
+      "sizes": "512x512 192x192"
     }
   ],
   "start_url": "/",

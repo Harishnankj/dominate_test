@@ -227,11 +227,13 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({ onComplete }) =>
         {/* Top Header */}
         <div className="flex items-center justify-between pb-6 border-b border-white/10 mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-cyan-500 to-brand-600 flex items-center justify-center text-slate-950 shadow-glow">
-              <Building2 className="w-6 h-6" />
-            </div>
+            <img
+              src="/domios_logo.png"
+              alt="DOMIOS Logo"
+              className="w-12 h-12 object-contain drop-shadow-md"
+            />
             <div>
-              <h2 className="text-xl font-extrabold text-white tracking-wide">DOMINATEE Smart Building OS</h2>
+              <h2 className="text-xl font-extrabold text-white tracking-wide">DOMIOS Smart Building OS</h2>
               <p className="text-xs text-cyan-400 font-mono">100% User-Configurable Setup Wizard (Step {step} of {totalSteps})</p>
             </div>
           </div>

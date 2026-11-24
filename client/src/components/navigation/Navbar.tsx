@@ -79,9 +79,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="flex items-center gap-2 cursor-pointer md:cursor-default"
             onClick={() => setCurrentTab('dashboard')}
           >
-            <div className="md:hidden w-8 h-8 rounded-lg bg-white text-[#090A0C] flex items-center justify-center font-extrabold text-sm">
-              D
-            </div>
+            <img
+              src="/domios_logo.png"
+              alt="DOMIOS"
+              className="md:hidden w-8 h-8 object-contain drop-shadow-sm shrink-0"
+            />
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-sm md:text-base tracking-wider text-[#F5F5F5] uppercase">

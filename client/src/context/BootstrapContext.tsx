@@ -10,6 +10,7 @@ interface BootstrapContextType {
   getFloor: (idOrSlug: string) => Floor | undefined;
   getDevicesForRoom: (roomId: string) => Device[];
   getCamerasForFloor: (floorId?: string) => Camera[];
+  getCamerasForRoom: (roomId: string) => Camera[];
   getVirtualState: (deviceId: string) => any;
   setVirtualState: (deviceId: string, state: any) => Promise<void>;
   isLiveSyncConnected: boolean;
@@ -233,6 +234,16 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     [data]
   );
 
+  const getCamerasForRoom = useCallback(
+    (roomId: string) => {
+      if (!data) return [];
+      return data.cameras
+        .filter((c) => c.room_id === roomId)
+        .sort((a, b) => a.sort_order - b.sort_order);
+    },
+    [data]
+  );
+
   const getVirtualState = useCallback(
     (deviceId: string) => {
       if (!data || !data.virtual_device_states) return undefined;
@@ -368,6 +379,7 @@ export const BootstrapProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         getFloor,
         getDevicesForRoom,
         getCamerasForFloor,
+        getCamerasForRoom,
         getVirtualState,
         setVirtualState,
         isLiveSyncConnected,

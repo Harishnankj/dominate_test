@@ -59,11 +59,13 @@ export const App: React.FC = () => {
   if (authLoading || bootstrapLoading) {
     return (
       <div className="min-h-screen bg-[#090A0C] flex flex-col items-center justify-center space-y-4">
-        <div className="w-12 h-12 rounded-2xl bg-white text-[#090A0C] flex items-center justify-center font-black text-xl animate-pulse shadow-sm">
-          D
-        </div>
+        <img
+          src="/domios_logo.png"
+          alt="DOMIOS Logo"
+          className="w-16 h-16 object-contain drop-shadow-2xl animate-pulse"
+        />
         <p className="text-xs font-mono text-[#A6A6A6] tracking-widest uppercase animate-pulse">
-          Initializing DOMINATE Smart Building OS...
+          Initializing DOMIOS Smart Building OS...
         </p>
       </div>
     );
@@ -144,7 +146,8 @@ export const App: React.FC = () => {
             <DynamicRoomPage
               room={selectedRoom}
               onBack={() => setSelectedRoomId(null)}
-              onOpenAdmin={() => handleOpenAdmin('floors')}
+              onOpenAdmin={(tab) => handleOpenAdmin(tab || 'floors')}
+              onOpenFullscreenCamera={(cam) => setFullscreenCamera(cam)}
             />
           ) : (
             <>

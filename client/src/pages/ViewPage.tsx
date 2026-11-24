@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layers, Briefcase, ChevronRight, Users, Sparkles } from 'lucide-react';
+import { Layers, Briefcase, ChevronRight, Users, Sparkles, Video } from 'lucide-react';
 import { useBootstrap } from '../context/BootstrapContext';
 import { useHA } from '../context/MultiHubHomeAssistantProvider';
 
@@ -24,7 +24,7 @@ export const ViewPage: React.FC<ViewPageProps> = ({
   onSelectRoom,
   onOpenAdmin,
 }) => {
-  const { data } = useBootstrap();
+  const { data, getCamerasForRoom } = useBootstrap();
   const { getEntity } = useHA();
 
   const floors = data?.floors || [];
@@ -87,6 +87,8 @@ export const ViewPage: React.FC<ViewPageProps> = ({
             const presenceDev = roomDevices.find((d) => d.type === 'presence_sensor');
             const presenceEntity = presenceDev?.entity_id ? getEntity(presenceDev.entity_id) : undefined;
             const isOccupied = presenceEntity?.state === 'on' || presenceEntity?.state === 'detected';
+            const roomCameras = getCamerasForRoom ? getCamerasForRoom(room.id) : [];
+            const hasCamera = roomCameras.length > 0;
 
             const photoKey = room.name.toLowerCase().includes('exec')
               ? 'executive'
@@ -114,6 +116,15 @@ export const ViewPage: React.FC<ViewPageProps> = ({
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#191A1D] via-[#191A1D]/40 to-transparent" />
                   
+                  {hasCamera && (
+                    <div className="absolute top-3 left-3 z-10">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold backdrop-blur-md bg-black/70 text-cyan-400 border border-cyan-500/30">
+                        <Video className="w-3 h-3 text-cyan-400" />
+                        <span>CCTV LIVE</span>
+                      </span>
+                    </div>
+                  )}
+
                   {presenceDev && (
                     <div className="absolute top-3 right-3">
                       <span

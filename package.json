@@ -6,7 +6,7 @@
   "scripts": {
     "dev:server": "cd server && npm.cmd run dev",
     "dev:client": "cd client && npm.cmd run dev",
-    "dev:go2rtc": "bin\\go2rtc.exe -config server\\go2rtc.yaml",
+    "dev:go2rtc": "powershell -NoProfile -Command \"if (-not (Test-Path 'C:\\ProgramData\\dominatee-go2rtc\\go2rtc.exe')) { New-Item -ItemType Directory -Path 'C:\\ProgramData\\dominatee-go2rtc' -Force | Out-Null; Copy-Item 'bin\\go2rtc.exe' 'C:\\ProgramData\\dominatee-go2rtc\\go2rtc.exe' -Force }; & 'C:\\ProgramData\\dominatee-go2rtc\\go2rtc.exe' -config server\\go2rtc.yaml\"",
     "dev": "concurrently --restart-tries -1 --restart-after 2000 \"npm.cmd run dev:server\" \"npm.cmd run dev:client\" \"npm.cmd run dev:go2rtc\"",
     "build:server": "cd server && npm.cmd run build",
     "build:client": "cd client && npm.cmd run build",

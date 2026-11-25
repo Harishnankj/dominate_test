@@ -99,7 +99,8 @@ export const ViewPage: React.FC<ViewPageProps> = ({
               : room.name.toLowerCase().includes('work')
               ? 'workspace'
               : 'default';
-            const bgImage = ROOM_PHOTOS[photoKey] || ROOM_PHOTOS.default;
+            const customWallpaper = room.wallpaper_url?.trim();
+            const bgImage = customWallpaper || ROOM_PHOTOS[photoKey] || ROOM_PHOTOS.default;
 
             return (
               <div
@@ -112,7 +113,9 @@ export const ViewPage: React.FC<ViewPageProps> = ({
                   <img
                     src={bgImage}
                     alt={room.name}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 opacity-60"
+                    className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${
+                      customWallpaper ? 'opacity-80' : 'opacity-60'
+                    }`}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#191A1D] via-[#191A1D]/40 to-transparent" />
                   

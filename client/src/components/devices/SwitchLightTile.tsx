@@ -1,9 +1,10 @@
 import React from 'react';
-import { ToggleLeft, ToggleRight, Star, Power, Radio, Wifi } from 'lucide-react';
+import { ToggleLeft, ToggleRight, Star, Power, Radio, Wifi, Snowflake, Fan, Plug, Zap, Activity } from 'lucide-react';
 import type { Device } from '../../types';
 import { useEntity } from '../../context/MultiHubHomeAssistantProvider';
 import { useAuth } from '../../context/AuthContext';
 import { useBootstrap } from '../../context/BootstrapContext';
+import { getDeviceRoleCategory } from '../../utils/deviceCategory';
 
 interface SwitchLightTileProps {
   device: Device;
@@ -89,6 +90,20 @@ export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
     }
   };
 
+  const role = getDeviceRoleCategory(device);
+  const RoleIcon =
+    role === 'ac'
+      ? Snowflake
+      : role === 'fan'
+      ? Fan
+      : role === 'plug'
+      ? Plug
+      : role === 'meter'
+      ? Zap
+      : role === 'sensor'
+      ? Activity
+      : Power;
+
   return (
     <div
       onClick={handleToggle}
@@ -103,15 +118,22 @@ export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
           <div
             className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all ${
               isOn
-                ? 'bg-white text-[#090A0C] shadow-sm scale-105 font-bold'
+                ? role === 'ac'
+                  ? 'bg-cyan-400 text-[#090A0C] shadow-sm scale-105 font-bold'
+                  : 'bg-white text-[#090A0C] shadow-sm scale-105 font-bold'
                 : 'bg-[#202226] text-[#777777]'
             }`}
           >
-            <Power className="w-5 h-5" />
+            <RoleIcon className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
               <h4 className="text-sm font-semibold text-[#F5F5F5] tracking-wide leading-tight">{device.name}</h4>
+              {role === 'ac' && (
+                <span className="px-1.5 py-0.5 rounded bg-cyan-950/70 text-cyan-400 border border-cyan-800/40 text-[9px] font-mono font-bold uppercase">
+                  AC
+                </span>
+              )}
               {isDirectZ2m && (
                 <span title="Controlled directly via Zigbee2MQTT" className="text-[10px] text-[#22D68A] flex items-center gap-0.5">
                   <Radio className="w-2.5 h-2.5" />
@@ -123,8 +145,10 @@ export const SwitchLightTile: React.FC<SwitchLightTileProps> = ({ device }) => {
                 </span>
               )}
             </div>
-            <span className={`text-[10px] font-mono uppercase font-bold tracking-wider mt-0.5 inline-block ${isOn ? 'text-white' : 'text-[#777777]'}`}>
-              {isOn ? 'ACTIVE' : 'OFF'}
+            <span className={`text-[10px] font-mono uppercase font-bold tracking-wider mt-0.5 inline-block ${
+              isOn ? (role === 'ac' ? 'text-cyan-400' : 'text-white') : 'text-[#777777]'
+            }`}>
+              {isOn ? (role === 'ac' ? 'COOLING / ON' : 'ACTIVE') : 'OFF'}
             </span>
           </div>
         </div>

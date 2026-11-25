@@ -52,6 +52,7 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
   );
 
   // Config fields
+  const [deviceRole, setDeviceRole] = useState<string>('');
   const [maxWattage, setMaxWattage] = useState(18);
   const [enabledControls, setEnabledControls] = useState<string[]>(DEFAULT_ENABLED_LIGHT_CONTROLS);
   const [irProfileId, setIrProfileId] = useState(irProfiles[0]?.id || '');
@@ -80,6 +81,7 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
 
       try {
         const cfg = JSON.parse(initialDevice.config_json || '{}');
+        setDeviceRole(cfg.category || '');
         if (cfg.endpoint) setZ2mEndpoint(cfg.endpoint);
         else setZ2mEndpoint('');
         if (cfg.max_wattage) setMaxWattage(cfg.max_wattage);
@@ -93,12 +95,15 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
         if (cfg.down_entity_id) setDownEntityId(cfg.down_entity_id);
         if (cfg.travel_ms) setTravelMs(cfg.travel_ms);
         if (cfg.lockId) setLockId(cfg.lockId);
-      } catch (_) { }
+      } catch (_) {
+        setDeviceRole('');
+      }
     } else {
       setTargetRoomId(roomId || (rooms[0]?.id || ''));
       setName('');
       setSelectedEntityId('');
       setZ2mEndpoint('');
+      setDeviceRole('');
       setEnabledControls(DEFAULT_ENABLED_LIGHT_CONTROLS);
     }
   }, [initialDevice, hubs, roomId, rooms]);
@@ -184,6 +189,12 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
       config.endpoint = z2mEndpoint;
     } else {
       delete config.endpoint;
+    }
+
+    if (deviceRole) {
+      config.category = deviceRole;
+    } else {
+      delete config.category;
     }
 
     await onSave({
@@ -272,22 +283,44 @@ export const DeviceMappingModal: React.FC<DeviceMappingModalProps> = ({
                 <option value="cover" className="bg-slate-900">Native Cover Blinds</option>
                 <option value="presence_sensor" className="bg-slate-900">Presence / Occupancy Sensor</option>
                 <option value="exhaust_fan" className="bg-slate-900">Exhaust / Ventilation Fan</option>
+                <option value="energy_meter" className="bg-slate-900">Energy Meter / Circuit Breaker</option>
+                <option value="environmental_sensor" className="bg-slate-900">Environmental / Air Quality Sensor</option>
+                <option value="smart_knob" className="bg-slate-900">Smart Rotary Knob</option>
                 <option value="ttlock" className="bg-slate-900">Smart Door Lock (TTLock / Tuya Wi-Fi)</option>
               </select>
             </div>
           </div>
 
-          {/* Device Friendly Name */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">Display Name in UI</label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. Executive Desk Light, Ceiling AC, Door Sensor"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full glass-input rounded-xl px-3 py-2 text-sm text-white"
-            />
+          {/* Device Friendly Name & Functional Role */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Display Name in UI</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Executive Desk Light, Ceiling AC, Door Sensor"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full glass-input rounded-xl px-3 py-2 text-sm text-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Quick Control & Category Role</label>
+              <select
+                value={deviceRole}
+                onChange={(e) => setDeviceRole(e.target.value)}
+                className="w-full glass-input rounded-xl px-3 py-2 text-sm text-white"
+              >
+                <option value="" className="bg-slate-900">Auto-detect (from Name &amp; Type)</option>
+                <option value="light" className="bg-slate-900">Light Fixture (All Lights)</option>
+                <option value="ac" className="bg-slate-900">AC / Climate Unit (AC Climate)</option>
+                <option value="fan" className="bg-slate-900">Fan / Ventilation (Fans &amp; Vents)</option>
+                <option value="plug" className="bg-slate-900">Smart Plug / Outlet (Smart Plugs)</option>
+                <option value="meter" className="bg-slate-900">Energy Meter / Main Breaker</option>
+                <option value="sensor" className="bg-slate-900">Sensor / Trigger Only</option>
+              </select>
+            </div>
           </div>
 
           {/* Live Searchable HA Entity Picker */}

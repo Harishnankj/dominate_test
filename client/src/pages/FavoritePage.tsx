@@ -24,6 +24,7 @@ import {
   SmartKnobTile,
 } from '../components/devices/SpecialtyTiles';
 import type { Room, Device } from '../types';
+import { getDeviceRoleCategory } from '../utils/deviceCategory';
 
 interface FavoritePageProps {
   onSelectRoom: (roomId: string) => void;
@@ -55,14 +56,17 @@ export const FavoritePage: React.FC<FavoritePageProps> = ({
     setActionLoading(true);
     try {
       for (const dev of favoriteDevices) {
-        if (dev.type === 'switch_light' || dev.type === 'dimmable_light') {
+        if (getDeviceRoleCategory(dev) === 'light') {
           let cfg: any = {};
           try { cfg = JSON.parse(dev.config_json); } catch (_) {}
           const zName = dev.z2m_friendly_name || cfg.z2m_friendly_name;
           const tuyaId = dev.tuya_device_id || cfg.tuya_device_id;
           if (zName) setZ2mState(zName, { state: 'ON' }).catch(() => {});
           if (tuyaId) setTuyaState(tuyaId, { switch_1: true, state: 'ON' }).catch(() => {});
-          if (dev.entity_id) callService('light', 'turn_on', { entity_id: dev.entity_id }).catch(() => {});
+          if (dev.entity_id) {
+            const domain = dev.entity_id.split('.')[0] || 'light';
+            callService(domain, 'turn_on', { entity_id: dev.entity_id }).catch(() => {});
+          }
         }
       }
     } finally {
@@ -74,14 +78,17 @@ export const FavoritePage: React.FC<FavoritePageProps> = ({
     setActionLoading(true);
     try {
       for (const dev of favoriteDevices) {
-        if (dev.type === 'switch_light' || dev.type === 'dimmable_light') {
+        if (getDeviceRoleCategory(dev) === 'light') {
           let cfg: any = {};
           try { cfg = JSON.parse(dev.config_json); } catch (_) {}
           const zName = dev.z2m_friendly_name || cfg.z2m_friendly_name;
           const tuyaId = dev.tuya_device_id || cfg.tuya_device_id;
           if (zName) setZ2mState(zName, { state: 'OFF' }).catch(() => {});
           if (tuyaId) setTuyaState(tuyaId, { switch_1: false, state: 'OFF' }).catch(() => {});
-          if (dev.entity_id) callService('light', 'turn_off', { entity_id: dev.entity_id }).catch(() => {});
+          if (dev.entity_id) {
+            const domain = dev.entity_id.split('.')[0] || 'light';
+            callService(domain, 'turn_off', { entity_id: dev.entity_id }).catch(() => {});
+          }
         }
       }
     } finally {
@@ -110,31 +117,14 @@ export const FavoritePage: React.FC<FavoritePageProps> = ({
       }
 
       // Category filter
+      const role = getDeviceRoleCategory(dev);
       if (selectedCategory === 'all') return true;
-      if (selectedCategory === 'lights') {
-        return dev.type === 'switch_light' || dev.type === 'dimmable_light';
-      }
-      if (selectedCategory === 'climate') {
-        return dev.type === 'ac_ir' || dev.type === 'climate' || dev.type === 'exhaust_fan';
-      }
-      if (selectedCategory === 'covers') {
-        return dev.type === 'blinds_relay' || dev.type === 'cover';
-      }
-      if (selectedCategory === 'locks') {
-        return dev.type === 'ttlock';
-      }
-      if (selectedCategory === 'plugs') {
-        let cfg: any = {};
-        try { cfg = JSON.parse(dev.config_json); } catch (_) {}
-        return cfg.category === 'socket' || dev.subtitle?.toLowerCase().includes('plug');
-      }
-      if (selectedCategory === 'sensors') {
-        return (
-          dev.type === 'presence_sensor' ||
-          dev.type === 'environmental_sensor' ||
-          dev.type === 'energy_meter'
-        );
-      }
+      if (selectedCategory === 'lights') return role === 'light';
+      if (selectedCategory === 'climate') return role === 'ac' || role === 'fan';
+      if (selectedCategory === 'covers') return role === 'curtain';
+      if (selectedCategory === 'locks') return role === 'lock';
+      if (selectedCategory === 'plugs') return role === 'plug' || role === 'meter';
+      if (selectedCategory === 'sensors') return role === 'sensor';
       return true;
     });
   }, [favoriteDevices, selectedCategory, selectedRoomFilter]);
@@ -152,15 +142,12 @@ export const FavoritePage: React.FC<FavoritePageProps> = ({
     };
 
     favoriteDevices.forEach((dev) => {
-      if (dev.type === 'switch_light' || dev.type === 'dimmable_light') counts.lights++;
-      else if (dev.type === 'ac_ir' || dev.type === 'climate' || dev.type === 'exhaust_fan') counts.climate++;
-      else if (dev.type === 'blinds_relay' || dev.type === 'cover') counts.covers++;
-      else if (dev.type === 'ttlock') counts.locks++;
-      else if (
-        dev.type === 'presence_sensor' ||
-        dev.type === 'environmental_sensor' ||
-        dev.type === 'energy_meter'
-      ) counts.sensors++;
+      const role = getDeviceRoleCategory(dev);
+      if (role === 'light') counts.lights++;
+      else if (role === 'ac' || role === 'fan') counts.climate++;
+      else if (role === 'curtain') counts.covers++;
+      else if (role === 'lock') counts.locks++;
+      else if (role === 'sensor') counts.sensors++;
       else counts.plugs++;
     });
 

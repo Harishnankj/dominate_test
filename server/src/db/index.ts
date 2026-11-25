@@ -10,6 +10,14 @@ if (!fs.existsSync(dir)) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
+export function getWallpapersDir(): string {
+  const wpDir = path.resolve(dir, 'wallpapers');
+  if (!fs.existsSync(wpDir)) {
+    fs.mkdirSync(wpDir, { recursive: true });
+  }
+  return wpDir;
+}
+
 const rawDb = new DatabaseSync(DB_PATH);
 rawDb.exec('PRAGMA journal_mode = WAL;');
 rawDb.exec('PRAGMA foreign_keys = ON;');
@@ -55,6 +63,12 @@ export function initDatabase() {
     db.exec(schema);
   }
 
+  // Schema migrations for rooms (custom background wallpaper_url)
+  try {
+    const roomCols = (db.prepare('PRAGMA table_info(rooms)').all() as any[]).map((c) => c.name);
+    if (!roomCols.includes('wallpaper_url')) db.exec("ALTER TABLE rooms ADD COLUMN wallpaper_url TEXT DEFAULT '';");
+  } catch (_) {}
+
   // Schema migrations for cameras table (ONVIF & PTZ columns)
   try {
     const cameraCols = (db.prepare('PRAGMA table_info(cameras)').all() as any[]).map((c) => c.name);
@@ -93,6 +107,8 @@ export function initDatabase() {
     if (!configCols.includes('tuya_region')) db.exec("ALTER TABLE building_config ADD COLUMN tuya_region TEXT DEFAULT 'in';");
     if (!configCols.includes('tuya_endpoint')) db.exec("ALTER TABLE building_config ADD COLUMN tuya_endpoint TEXT DEFAULT 'https://openapi.tuyain.com';");
     if (!configCols.includes('tuya_uid')) db.exec("ALTER TABLE building_config ADD COLUMN tuya_uid TEXT DEFAULT '';");
+    if (!configCols.includes('quick_controls_json')) db.exec("ALTER TABLE building_config ADD COLUMN quick_controls_json TEXT DEFAULT '';");
+    if (!configCols.includes('ui_theme')) db.exec("ALTER TABLE building_config ADD COLUMN ui_theme TEXT DEFAULT 'default';");
   } catch (_) {}
 
   // Schema table for multi-coordinator Zigbee2MQTT hubs (z2m_hubs)

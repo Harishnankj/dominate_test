@@ -17,7 +17,7 @@ import { useBootstrap } from '../context/BootstrapContext';
 import { useAuth } from '../context/AuthContext';
 import { ApiService } from '../services/api';
 import type { Automation, PresetScene } from '../types';
-import { PresetEditModal, PRESET_ICON_MAP } from '../components/scenes/PresetEditModal';
+import { PRESET_ICON_MAP } from '../components/scenes/PresetEditModal';
 
 interface ScenesPageProps {
   onOpenAdmin?: () => void;
@@ -36,7 +36,6 @@ export const ScenesPage: React.FC<ScenesPageProps> = ({
 
   const [runningSceneId, setRunningSceneId] = useState<string | null>(null);
   const [successSceneId, setSuccessSceneId] = useState<string | null>(null);
-  const [editingPreset, setEditingPreset] = useState<PresetScene | null>(null);
 
   // Architectural Presets: load dynamically from database / bootstrap, fallback to defaults
   const presetScenes: PresetScene[] =
@@ -253,17 +252,6 @@ export const ScenesPage: React.FC<ScenesPageProps> = ({
                     <div className="w-10 h-10 rounded-xl bg-[#111214] border border-[#383A3E] flex items-center justify-center">
                       <Icon className={`w-5 h-5 ${colorClass}`} />
                     </div>
-
-                    {isAdmin && (
-                      <button
-                        onClick={() => setEditingPreset(scene)}
-                        className="px-2.5 py-1 rounded-lg bg-[#111214] hover:bg-[#202226] text-[#A6A6A6] hover:text-white border border-[#383A3E] hover:border-white/40 text-[11px] font-semibold flex items-center gap-1.5 transition-all shadow-sm"
-                        title="Customize preset for building"
-                      >
-                        <Sliders className="w-3 h-3" />
-                        <span>Edit</span>
-                      </button>
-                    )}
                   </div>
                   <h4 className="font-bold text-sm text-[#F5F5F5]">{scene.name}</h4>
                   <p className="text-xs text-[#A6A6A6] leading-relaxed">{scene.desc}</p>
@@ -381,13 +369,6 @@ export const ScenesPage: React.FC<ScenesPageProps> = ({
           </div>
         )}
       </div>
-
-      {/* Preset Scene Customization Modal (Admin) */}
-      <PresetEditModal
-        isOpen={!!editingPreset}
-        preset={editingPreset}
-        onClose={() => setEditingPreset(null)}
-      />
     </div>
   );
 };

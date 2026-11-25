@@ -1,5 +1,7 @@
 import { Router } from 'express';
-import { db } from '../db/index.js';
+import fs from 'fs';
+import path from 'path';
+import { db, getWallpapersDir } from '../db/index.js';
 import { ptzMove, ptzStop } from '../services/onvifPtz.js';
 
 const router = Router();
@@ -142,6 +144,24 @@ router.post('/cameras/:id/ptz', async (req, res) => {
       }
       throw moveErr;
     }
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Serve locally uploaded room wallpapers
+router.get('/wallpapers/:filename', (req, res) => {
+  try {
+    const safeName = path.basename(String(req.params.filename || ''));
+    if (!safeName || safeName.includes('..')) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    const filePath = path.join(getWallpapersDir(), safeName);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Wallpaper not found' });
+    }
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    return res.sendFile(filePath);
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }

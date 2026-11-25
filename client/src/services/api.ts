@@ -127,6 +127,20 @@ export class ApiService {
     return this.request(`/api/admin/rooms/${id}`, { method: 'DELETE' });
   }
 
+  static async uploadRoomWallpaper(dataUrl: string): Promise<{ ok: boolean; url: string; filename?: string }> {
+    return this.request('/api/admin/wallpapers', {
+      method: 'POST',
+      body: JSON.stringify({ dataUrl }),
+    });
+  }
+
+  static async captureCameraWallpaper(streamId: string): Promise<{ ok: boolean; url: string; filename?: string }> {
+    return this.request('/api/admin/wallpapers/snapshot', {
+      method: 'POST',
+      body: JSON.stringify({ streamId }),
+    });
+  }
+
   static async addDevice(device: any): Promise<{ ok: boolean; id: string }> {
     return this.request('/api/admin/devices', { method: 'POST', body: JSON.stringify(device) });
   }

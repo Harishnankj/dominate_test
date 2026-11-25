@@ -11,6 +11,7 @@ import type { Room, Camera } from '../types';
 import { useBootstrap } from '../context/BootstrapContext';
 import { useHA } from '../context/MultiHubHomeAssistantProvider';
 import { Go2rtcVideo } from '../components/cctv/Go2rtcVideo';
+import { getDeviceRoleCategory } from '../utils/deviceCategory';
 import { DimmableLightTile } from '../components/devices/DimmableLightTile';
 import { SwitchLightTile } from '../components/devices/SwitchLightTile';
 import { AcIrTile } from '../components/devices/AcIrTile';
@@ -25,7 +26,7 @@ import {
   SmartKnobTile,
 } from '../components/devices/SpecialtyTiles';
 
-type AdminTab = 'hubs' | 'floors' | 'cameras' | 'ttlock' | 'ir' | 'automations' | 'backup' | 'settings';
+type AdminTab = 'hubs' | 'floors' | 'cameras' | 'ttlock' | 'ir' | 'automations' | 'quick_controls' | 'theme' | 'backup' | 'settings';
 
 interface DynamicRoomPageProps {
   room: Room;
@@ -56,7 +57,7 @@ export const DynamicRoomPage: React.FC<DynamicRoomPageProps> = ({
   // Quick Action: Turn off all lights in this room
   const handleTurnOffRoomLights = async () => {
     for (const dev of devices) {
-      if (dev.type === 'switch_light' || dev.type === 'dimmable_light') {
+      if (getDeviceRoleCategory(dev) === 'light') {
         let devConfig: any = {};
         try {
           devConfig = JSON.parse(dev.config_json);
@@ -205,10 +206,23 @@ export const DynamicRoomPage: React.FC<DynamicRoomPageProps> = ({
   };
 
   const hasRoomCamera = Boolean(activeCamera);
+  const customWallpaper = room.wallpaper_url?.trim() || '';
 
   return (
-    <div className="space-y-6 pb-24 animate-in fade-in">
-      {/* Header Bar */}
+    <div className="relative space-y-6 pb-24 animate-in fade-in">
+      {/* Custom Room Background Wallpaper (rendered only when photo is set in Admin Studio) */}
+      {customWallpaper && (
+        <div className="fixed inset-0 md:left-[260px] pointer-events-none z-0 overflow-hidden">
+          <div
+            className="absolute inset-0 bg-cover bg-center scale-105 opacity-35 transition-all duration-500"
+            style={{ backgroundImage: `url("${customWallpaper}")` }}
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#090A0C]/60 via-[#090A0C]/75 to-[#090A0C]/95" />
+        </div>
+      )}
+
+      <div className="relative z-10 space-y-6">
+        {/* Header Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <button
@@ -237,7 +251,7 @@ export const DynamicRoomPage: React.FC<DynamicRoomPageProps> = ({
         {/* Top Controls */}
         <div className="flex items-center gap-2">
           {/* Quick Action: All Lights Off */}
-          {devices.some((d) => d.type === 'switch_light' || d.type === 'dimmable_light') && (
+          {devices.some((d) => getDeviceRoleCategory(d) === 'light') && (
             <button
               onClick={handleTurnOffRoomLights}
               className="px-3 py-1.5 rounded-xl bg-[#191A1D] hover:bg-[#202226] text-xs font-semibold text-[#F5F5F5] border border-[#383A3E] hover:border-white/30 flex items-center gap-1.5 transition-colors"
@@ -278,6 +292,7 @@ export const DynamicRoomPage: React.FC<DynamicRoomPageProps> = ({
           {renderDeviceTiles('grid-cols-1 sm:grid-cols-2 lg:grid-cols-3')}
         </div>
       )}
+      </div>
     </div>
   );
 };

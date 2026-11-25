@@ -182,6 +182,40 @@ router.post('/:id/run', async (req, res) => {
     let executed = 0;
     const allDevices = db.prepare('SELECT * FROM devices').all() as any[];
 
+    const resolveDeviceRole = (dev: any, cfg: any): string => {
+      if (cfg?.category) return cfg.category === 'socket' ? 'plug' : cfg.category;
+      if (dev.type === 'ac_ir' || dev.type === 'climate') return 'ac';
+      if (dev.type === 'exhaust_fan') return 'fan';
+      if (dev.type === 'dimmable_light') return 'light';
+      if (dev.type === 'switch_light') {
+        const nm = String(dev.name || '').toLowerCase();
+        if (/\bac\b|whirlpool|air[\s_-]*con|hvac|daikin|voltas|bluestar|hitachi|carrier|lloyd|^ac[\s_-]|_ac$/i.test(nm)) return 'ac';
+        if (/\bfan\b|exhaust|ventilation|\bvent\b/i.test(nm)) return 'fan';
+        if (/vibration|occupancy|motion|presence/i.test(nm)) return 'sensor';
+        if (/energy[\s_-]*meter|circuit[\s_-]*breaker|\bmcb\b/i.test(nm)) return 'meter';
+        if (/plug|socket|outlet/i.test(nm)) return 'plug';
+        return 'light';
+      }
+      return dev.type;
+    };
+
+    const callHaToggle = async (dev: any, turnOn: boolean) => {
+      if (!dev.entity_id) return;
+      let hubId = dev.ha_hub_id;
+      if (!hubId) {
+        const room = db.prepare('SELECT ha_hub_id FROM rooms WHERE id = ?').get(dev.room_id) as any;
+        hubId = room?.ha_hub_id;
+      }
+      const hub = hubId
+        ? (db.prepare('SELECT * FROM ha_hubs WHERE id = ?').get(hubId) as any)
+        : (db.prepare('SELECT * FROM ha_hubs WHERE enabled = 1 LIMIT 1').get() as any);
+      if (!hub) return;
+      const domain = String(dev.entity_id).split('.')[0] || 'switch';
+      await HaService.callService(hub.local_url, hub.access_token, domain, turnOn ? 'turn_on' : 'turn_off', {
+        entity_id: dev.entity_id,
+      }).catch(() => {});
+    };
+
     for (const item of actions) {
       try {
         // Directives
@@ -194,6 +228,8 @@ router.post('/:id/run', async (req, res) => {
           for (const dev of allDevices) {
             let devConfig: any = {};
             try { devConfig = JSON.parse(dev.config_json); } catch (_) {}
+            if (resolveDeviceRole(dev, devConfig) !== 'light') continue;
+
             const zName = dev.z2m_friendly_name || devConfig.z2m_friendly_name;
             const tuyaId = dev.tuya_device_id || devConfig.tuya_device_id;
 
@@ -205,6 +241,7 @@ router.post('/:id/run', async (req, res) => {
                 if (zName) await mqttService.setDeviceState(zName, { state: 'OFF' }).catch(() => {});
                 if (tuyaId) await tuyaService.setDeviceState(tuyaId, { switch_led: false }).catch(() => {});
               }
+              await callHaToggle(dev, state === 'ON');
               executed++;
             } else if (dev.type === 'switch_light') {
               if (state === 'ON') {
@@ -214,8 +251,34 @@ router.post('/:id/run', async (req, res) => {
                 if (zName) await mqttService.setDeviceState(zName, { state: 'OFF' }).catch(() => {});
                 if (tuyaId) await tuyaService.setDeviceState(tuyaId, { switch_1: false }).catch(() => {});
               }
+              await callHaToggle(dev, state === 'ON');
               executed++;
             }
+          }
+        } else if (item.target === 'climate') {
+          const turnOn = (item.state || 'ON').toUpperCase() !== 'OFF';
+          for (const dev of allDevices) {
+            let devConfig: any = {};
+            try { devConfig = JSON.parse(dev.config_json); } catch (_) {}
+            if (resolveDeviceRole(dev, devConfig) !== 'ac') continue;
+            const zName = dev.z2m_friendly_name || devConfig.z2m_friendly_name;
+            const tuyaId = dev.tuya_device_id || devConfig.tuya_device_id;
+            if (dev.type === 'ac_ir' || dev.type === 'climate') {
+              await automationScheduler.executeStep({
+                device_id: dev.id,
+                action: turnOn ? 'turn_on' : 'turn_off',
+                value: {
+                  temp: item.temp ?? 23,
+                  temperature: item.temp ?? 23,
+                  hvac_mode: turnOn ? 'cool' : 'off',
+                },
+              });
+            } else {
+              if (zName) await mqttService.setDeviceState(zName, { state: turnOn ? 'ON' : 'OFF' }).catch(() => {});
+              if (tuyaId) await tuyaService.setDeviceState(tuyaId, { switch_1: turnOn }).catch(() => {});
+              await callHaToggle(dev, turnOn);
+            }
+            executed++;
           }
         } else if (item.target === 'locks') {
           const config = db.prepare('SELECT ttlock_client_id, ttlock_access_token, ttlock_legacy_url FROM building_config WHERE id = 1').get() as any;
@@ -236,9 +299,10 @@ router.post('/:id/run', async (req, res) => {
         } else if (item.target === 'plugs') {
           const state = (item.state || 'OFF').toUpperCase();
           for (const dev of allDevices) {
-            if (dev.type === 'switch_light' || dev.type === 'exhaust_fan') {
-              let devConfig: any = {};
-              try { devConfig = JSON.parse(dev.config_json); } catch (_) {}
+            let devConfig: any = {};
+            try { devConfig = JSON.parse(dev.config_json); } catch (_) {}
+            const role = resolveDeviceRole(dev, devConfig);
+            if (role === 'plug' || role === 'fan' || role === 'meter') {
               const zName = dev.z2m_friendly_name || devConfig.z2m_friendly_name;
               const tuyaId = dev.tuya_device_id || devConfig.tuya_device_id;
               if (state === 'OFF') {
@@ -248,6 +312,7 @@ router.post('/:id/run', async (req, res) => {
                 if (zName) await mqttService.setDeviceState(zName, { state: 'ON' }).catch(() => {});
                 if (tuyaId) await tuyaService.setDeviceState(tuyaId, { switch_1: true }).catch(() => {});
               }
+              await callHaToggle(dev, state === 'ON');
               executed++;
             }
           }

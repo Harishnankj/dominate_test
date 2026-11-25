@@ -140,3 +140,430 @@ video-rtc video {
   object-fit: cover;
   display: block;
 }
+
+/* ============================================================
+   DOMFLY 3D AI COMPANION
+   Always elevated on top across all themes, modals and drawers
+   ============================================================ */
+#domfly-floating-companion-portal,
+.domfly-companion-anchor {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  isolation: isolate !important;
+}
+
+#domfly-floating-companion-portal img,
+.domfly-companion-anchor img {
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: block !important;
+}
+
+/* ============================================================
+   WATER CRYSTAL DROP GLASSMORPHISM (data-theme="crystal_glass")
+   iPhone-style: rich gradient backdrop + frosted liquid-glass
+   cards that look like water crystal drops — real blur, real glow.
+   ============================================================ */
+.glass-crystal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  /* Soft pastel iOS-style gradient — gives depth for glass to float on */
+  background:
+    radial-gradient(ellipse 80% 60% at 15% 10%,  rgba(167, 200, 255, 0.55) 0%, transparent 65%),
+    radial-gradient(ellipse 70% 55% at 90% 80%,  rgba(192, 160, 255, 0.45) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 55% 50%,  rgba(130, 230, 220, 0.25) 0%, transparent 55%),
+    linear-gradient(145deg, #dce8f8 0%, #e8dff8 40%, #d8f0ef 70%, #e2e8f8 100%);
+}
+
+:root[data-theme="crystal_glass"] {
+  --bg-main: transparent;
+  --bg-sidebar: rgba(255, 255, 255, 0.28);
+  --card-surface: rgba(255, 255, 255, 0.22);
+  --card-border: rgba(255, 255, 255, 0.72);
+  --text-primary: #0f1923;
+  --text-secondary: #1e293b;
+  --text-muted: #475569;
+  --color-online: #059669;
+}
+
+:root[data-theme="crystal_glass"] body {
+  background: transparent;
+  color: #0f1923;
+}
+
+:root[data-theme="crystal_glass"] #root > .min-h-screen.bg-\[\#090A0C\] {
+  background: transparent !important;
+  color: #0f1923;
+}
+
+/* Studio / Admin canvas background - opaque so background page does not overlap */
+:root[data-theme="crystal_glass"] .admin-studio-root,
+:root[data-theme="crystal_glass"] .bg-\[\#090d16\] {
+  background-color: #dce8f8 !important;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 15% 10%, rgba(167, 200, 255, 0.75) 0%, transparent 65%),
+    radial-gradient(ellipse 70% 55% at 90% 80%, rgba(192, 160, 255, 0.65) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 55% 50%, rgba(130, 230, 220, 0.45) 0%, transparent 55%),
+    linear-gradient(145deg, #dce8f8 0%, #e8dff8 40%, #d8f0ef 70%, #e2e8f8 100%) !important;
+  color: #0f1923;
+}
+
+/* ----------------------------------------------------------------
+   CHROME: Sidebar, Navbar, Mobile Dock
+   Frosted glass slab — like iOS control centre panel
+   ---------------------------------------------------------------- */
+:root[data-theme="crystal_glass"] aside.w-\[260px\],
+:root[data-theme="crystal_glass"] header,
+:root[data-theme="crystal_glass"] nav.fixed.bottom-0 {
+  background: rgba(255, 255, 255, 0.38);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  border-color: rgba(255, 255, 255, 0.70);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.90),
+    0 8px 32px rgba(100, 120, 200, 0.18);
+}
+
+/* ----------------------------------------------------------------
+   WATER CRYSTAL DROP CARDS
+   The core effect: frosted glass bubble with:
+   - Bright top-edge specular highlight (like light hitting a droplet)
+   - Radial inner glow fading from white to clear
+   - Soft ambient drop-shadow
+   ---------------------------------------------------------------- */
+:root[data-theme="crystal_glass"] .glass-panel,
+:root[data-theme="crystal_glass"] .bg-\[\#191A1D\] {
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 0%,
+      rgba(255, 255, 255, 0.60) 0%,
+      rgba(255, 255, 255, 0.10) 55%,
+      transparent 100%),
+    linear-gradient(160deg,
+      rgba(255, 255, 255, 0.35) 0%,
+      rgba(255, 255, 255, 0.10) 60%,
+      rgba(200, 220, 255, 0.12) 100%);
+  backdrop-filter: blur(24px) saturate(190%) brightness(1.08);
+  -webkit-backdrop-filter: blur(24px) saturate(190%) brightness(1.08);
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-top-color: rgba(255, 255, 255, 0.95);
+  border-left-color: rgba(255, 255, 255, 0.85);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.30),
+    0 20px 48px -8px rgba(80, 100, 180, 0.22),
+    0 8px 20px -4px rgba(80, 100, 180, 0.14),
+    0 2px 6px rgba(100, 120, 200, 0.10);
+}
+
+/* Very round corners — like a water droplet / bubble */
+:root[data-theme="crystal_glass"] .rounded-2xl {
+  border-radius: 1.75rem;
+}
+:root[data-theme="crystal_glass"] .rounded-3xl {
+  border-radius: 2.25rem;
+}
+
+/* Opacity variants */
+:root[data-theme="crystal_glass"] .bg-\[\#191A1D\]\/60,
+:root[data-theme="crystal_glass"] .bg-\[\#191A1D\]\/80 {
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(20px) saturate(170%);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.60);
+}
+
+/* Modals, drawers, overlays */
+:root[data-theme="crystal_glass"] .bg-\[\#191A1D\]\/95,
+:root[data-theme="crystal_glass"] .bg-\[\#191A1D\]\/98,
+:root[data-theme="crystal_glass"] .fixed .glass-panel,
+:root[data-theme="crystal_glass"] .fixed .bg-\[\#191A1D\],
+:root[data-theme="crystal_glass"] .absolute.z-50.bg-\[\#191A1D\] {
+  background: rgba(240, 245, 255, 0.78);
+  backdrop-filter: blur(36px) saturate(200%);
+  -webkit-backdrop-filter: blur(36px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.98),
+    0 32px 64px -12px rgba(80, 100, 200, 0.28);
+}
+
+/* ----------------------------------------------------------------
+   RECESSED / SECONDARY SURFACES — pressed-in glass well
+   ---------------------------------------------------------------- */
+:root[data-theme="crystal_glass"] .bg-\[\#111214\],
+:root[data-theme="crystal_glass"] .bg-\[\#141518\],
+:root[data-theme="crystal_glass"] .bg-\[\#111214\]\/60,
+:root[data-theme="crystal_glass"] .bg-\[\#111214\]\/70,
+:root[data-theme="crystal_glass"] .bg-\[\#111214\]\/80,
+:root[data-theme="crystal_glass"] .bg-slate-900,
+:root[data-theme="crystal_glass"] .bg-slate-900\/60,
+:root[data-theme="crystal_glass"] .bg-slate-900\/80,
+:root[data-theme="crystal_glass"] .bg-slate-900\/90,
+:root[data-theme="crystal_glass"] .bg-slate-950,
+:root[data-theme="crystal_glass"] .bg-slate-950\/40,
+:root[data-theme="crystal_glass"] .bg-slate-950\/60,
+:root[data-theme="crystal_glass"] .bg-slate-950\/70,
+:root[data-theme="crystal_glass"] .bg-slate-950\/80,
+:root[data-theme="crystal_glass"] .bg-slate-950\/90 {
+  background: rgba(200, 215, 240, 0.28);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  border-color: rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 2px 6px rgba(100, 120, 200, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.70);
+}
+
+/* Mid-level surfaces */
+:root[data-theme="crystal_glass"] .glass-panel-glow,
+:root[data-theme="crystal_glass"] .bg-\[\#202226\],
+:root[data-theme="crystal_glass"] .bg-\[\#282B30\],
+:root[data-theme="crystal_glass"] .bg-slate-800,
+:root[data-theme="crystal_glass"] .bg-slate-800\/60,
+:root[data-theme="crystal_glass"] .bg-slate-800\/80,
+:root[data-theme="crystal_glass"] .bg-slate-700 {
+  background: rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border-color: rgba(255, 255, 255, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.90),
+    0 4px 14px rgba(80, 100, 180, 0.12);
+}
+
+/* Hover: card lifts and brightens */
+:root[data-theme="crystal_glass"] .hover\:bg-\[\#191A1D\]:hover,
+:root[data-theme="crystal_glass"] .hover\:bg-\[\#202226\]:hover,
+:root[data-theme="crystal_glass"] .hover\:bg-\[\#282B30\]:hover,
+:root[data-theme="crystal_glass"] .hover\:bg-slate-700:hover,
+:root[data-theme="crystal_glass"] .hover\:bg-slate-800:hover,
+:root[data-theme="crystal_glass"] .hover\:bg-white\/5:hover {
+  background: rgba(255, 255, 255, 0.52);
+  backdrop-filter: blur(24px) saturate(200%);
+  -webkit-backdrop-filter: blur(24px) saturate(200%);
+}
+
+/* ----------------------------------------------------------------
+   INPUTS — frosted inset wells
+   ---------------------------------------------------------------- */
+:root[data-theme="crystal_glass"] .glass-input {
+  background: rgba(255, 255, 255, 0.40);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  color: #0f1923;
+  box-shadow:
+    inset 0 2px 4px rgba(100, 120, 200, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.90);
+}
+:root[data-theme="crystal_glass"] .glass-input::placeholder {
+  color: #64748b;
+}
+:root[data-theme="crystal_glass"] .glass-input:focus {
+  background: rgba(255, 255, 255, 0.60);
+  border-color: rgba(139, 180, 248, 0.80);
+  box-shadow:
+    inset 0 2px 4px rgba(100, 120, 200, 0.10),
+    0 0 0 3px rgba(139, 180, 248, 0.25);
+}
+
+:root[data-theme="crystal_glass"] select option {
+  background-color: #e8f0fe;
+  color: #0f1923;
+}
+
+/* ----------------------------------------------------------------
+   BORDERS
+   ---------------------------------------------------------------- */
+:root[data-theme="crystal_glass"] .border-\[\#383A3E\],
+:root[data-theme="crystal_glass"] .border-\[\#383A3E\]\/80,
+:root[data-theme="crystal_glass"] .border-white\/10 {
+  border-color: rgba(255, 255, 255, 0.65);
+}
+:root[data-theme="crystal_glass"] .border-\[\#383A3E\]\/60,
+:root[data-theme="crystal_glass"] .border-\[\#383A3E\]\/50,
+:root[data-theme="crystal_glass"] .border-\[\#383A3E\]\/40 {
+  border-color: rgba(255, 255, 255, 0.45);
+}
+:root[data-theme="crystal_glass"] .border-\[\#4B4E54\] {
+  border-color: rgba(255, 255, 255, 0.85);
+}
+
+/* Active / white surfaces — bright glass pill */
+:root[data-theme="crystal_glass"] .glass-panel-active,
+:root[data-theme="crystal_glass"] .bg-white.rounded-xl,
+:root[data-theme="crystal_glass"] .bg-white.rounded-2xl {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  color: #0f1923;
+  box-shadow:
+    inset 0 1.5px 0 #ffffff,
+    0 10px 28px -6px rgba(80, 100, 200, 0.22),
+    0 4px 10px rgba(80, 100, 200, 0.12);
+}
+
+/* ----------------------------------------------------------------
+   TYPOGRAPHY — dark ink on frosted glass
+   ---------------------------------------------------------------- */
+:root[data-theme="crystal_glass"] .text-white,
+:root[data-theme="crystal_glass"] .text-\[\#F5F5F5\],
+:root[data-theme="crystal_glass"] .text-slate-100,
+:root[data-theme="crystal_glass"] .text-slate-200 {
+  color: #0f1923;
+}
+
+:root[data-theme="crystal_glass"] .text-\[\#A6A6A6\],
+:root[data-theme="crystal_glass"] .text-slate-300,
+:root[data-theme="crystal_glass"] .text-slate-400 {
+  color: #334155;
+}
+
+:root[data-theme="crystal_glass"] .text-\[\#777777\],
+:root[data-theme="crystal_glass"] .text-slate-500 {
+  color: #475569;
+}
+
+:root[data-theme="crystal_glass"] .text-cyan-400,
+:root[data-theme="crystal_glass"] .text-cyan-300 {
+  color: #0369a1;
+}
+
+:root[data-theme="crystal_glass"] .text-\[\#22D68A\],
+:root[data-theme="crystal_glass"] .text-emerald-400,
+:root[data-theme="crystal_glass"] .text-emerald-300 {
+  color: #047857;
+}
+
+:root[data-theme="crystal_glass"] .text-\[\#F0B94D\],
+:root[data-theme="crystal_glass"] .text-amber-400,
+:root[data-theme="crystal_glass"] .text-amber-300 {
+  color: #b45309;
+}
+
+:root[data-theme="crystal_glass"] .text-\[\#FF5757\],
+:root[data-theme="crystal_glass"] .text-rose-400,
+:root[data-theme="crystal_glass"] .text-rose-300 {
+  color: #dc2626;
+}
+
+/* Tinted status pills */
+:root[data-theme="crystal_glass"] .bg-cyan-950\/60,
+:root[data-theme="crystal_glass"] .bg-cyan-950\/70,
+:root[data-theme="crystal_glass"] .bg-cyan-950\/80 {
+  background: rgba(14, 165, 233, 0.16);
+  border-color: rgba(14, 165, 233, 0.35);
+}
+:root[data-theme="crystal_glass"] .bg-emerald-950\/60,
+:root[data-theme="crystal_glass"] .bg-emerald-950\/70 {
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+:root[data-theme="crystal_glass"] .bg-amber-950\/70,
+:root[data-theme="crystal_glass"] .bg-yellow-950\/70 {
+  background: rgba(245, 158, 11, 0.16);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+:root[data-theme="crystal_glass"] .bg-rose-950\/70 {
+  background: rgba(244, 63, 94, 0.16);
+  border-color: rgba(244, 63, 94, 0.35);
+}
+:root[data-theme="crystal_glass"] .bg-purple-950\/70,
+:root[data-theme="crystal_glass"] .bg-indigo-950\/70 {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+:root[data-theme="crystal_glass"] .hover\:text-white:hover,
+:root[data-theme="crystal_glass"] .hover\:text-\[\#F5F5F5\]:hover {
+  color: #020617;
+}
+
+/* Preserve dark video feed look inside CCTV panels */
+:root[data-theme="crystal_glass"] .bg-black {
+  background-color: #090d16;
+}
+:root[data-theme="crystal_glass"] .bg-black .text-white,
+:root[data-theme="crystal_glass"] .bg-black .text-\[\#F5F5F5\],
+:root[data-theme="crystal_glass"] .bg-black .text-slate-200 {
+  color: #f8fafc;
+}
+:root[data-theme="crystal_glass"] .bg-black .bg-\[\#090A0C\]\/80 {
+  background: rgba(9, 13, 22, 0.72);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+/* Energy / SVG lines */
+:root[data-theme="crystal_glass"] svg path[stroke="#FFFFFF"] {
+  stroke: #0f1923;
+}
+:root[data-theme="crystal_glass"] svg circle[stroke="#FFFFFF"] {
+  fill: rgba(255, 255, 255, 0.60);
+  stroke: #0f1923;
+}
+:root[data-theme="crystal_glass"] svg circle[fill="#FFFFFF"] {
+  fill: #0f1923;
+}
+
+/* Room wallpaper gradient scrims — crisp white glass mist */
+:root[data-theme="crystal_glass"] .from-\[\#191A1D\] {
+  --tw-gradient-from: rgba(220, 232, 252, 0.90) var(--tw-gradient-from-position);
+  --tw-gradient-to: rgba(220, 232, 252, 0) var(--tw-gradient-to-position);
+}
+:root[data-theme="crystal_glass"] .via-\[\#191A1D\]\/80 {
+  --tw-gradient-via: rgba(220, 232, 252, 0.65) var(--tw-gradient-via-position);
+}
+:root[data-theme="crystal_glass"] .via-\[\#191A1D\]\/40 {
+  --tw-gradient-via: rgba(220, 232, 252, 0.40) var(--tw-gradient-via-position);
+}
+:root[data-theme="crystal_glass"] .from-\[\#090A0C\] {
+  --tw-gradient-from: rgba(220, 235, 255, 0.92) var(--tw-gradient-from-position);
+  --tw-gradient-to: rgba(220, 235, 255, 0) var(--tw-gradient-to-position);
+}
+:root[data-theme="crystal_glass"] .via-\[\#090A0C\]\/60 {
+  --tw-gradient-via: rgba(215, 230, 252, 0.60) var(--tw-gradient-via-position);
+}
+:root[data-theme="crystal_glass"] .from-\[\#090A0C\]\/60 {
+  --tw-gradient-from: rgba(210, 228, 252, 0.55) var(--tw-gradient-from-position);
+  --tw-gradient-to: rgba(210, 228, 252, 0) var(--tw-gradient-to-position);
+}
+:root[data-theme="crystal_glass"] .via-\[\#090A0C\]\/75 {
+  --tw-gradient-via: rgba(205, 225, 252, 0.70) var(--tw-gradient-via-position);
+}
+:root[data-theme="crystal_glass"] .to-\[\#090A0C\]\/95 {
+  --tw-gradient-to: rgba(200, 220, 250, 0.88) var(--tw-gradient-to-position);
+}
+
+/* Tile hover — card lifts, brightens specular */
+:root[data-theme="crystal_glass"] .tile-hover:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.40),
+    0 24px 56px -8px rgba(80, 100, 200, 0.28),
+    0 10px 24px -4px rgba(80, 100, 200, 0.16);
+}
+
+/* Scrollbar */
+:root[data-theme="crystal_glass"] ::-webkit-scrollbar-track {
+  background: rgba(200, 215, 245, 0.30);
+  border-radius: 6px;
+}
+:root[data-theme="crystal_glass"] ::-webkit-scrollbar-thumb {
+  background: rgba(100, 130, 200, 0.28);
+  border-radius: 6px;
+}
+:root[data-theme="crystal_glass"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 130, 200, 0.48);
+}

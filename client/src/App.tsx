@@ -24,7 +24,7 @@ import { DomflyFloatingCompanion } from './components/companion/DomflyFloatingCo
 import { FloatingAssistantDrawer } from './components/companion/FloatingAssistantDrawer';
 import type { DomflyState } from './components/companion/DomflyCharacter';
 
-import type { Camera, Room } from './types';
+import type { Camera, Room, UiTheme } from './types';
 
 export const App: React.FC = () => {
   const { isSetupCompleted, loading: authLoading } = useAuth();
@@ -39,15 +39,37 @@ export const App: React.FC = () => {
   const [floatingChatOpen, setFloatingChatOpen] = useState(false);
   const [companionState, setCompanionState] = useState<DomflyState>('idle');
   const [adminStudioInitialTab, setAdminStudioInitialTab] = useState<
-    'hubs' | 'floors' | 'cameras' | 'ttlock' | 'ir' | 'automations' | 'backup' | 'settings'
+    'hubs' | 'floors' | 'cameras' | 'ttlock' | 'ir' | 'automations' | 'quick_controls' | 'theme' | 'backup' | 'settings'
   >('hubs');
 
   const handleOpenAdmin = (
-    tab: 'hubs' | 'floors' | 'cameras' | 'ttlock' | 'ir' | 'automations' | 'backup' | 'settings' = 'hubs'
+    tab: 'hubs' | 'floors' | 'cameras' | 'ttlock' | 'ir' | 'automations' | 'quick_controls' | 'theme' | 'backup' | 'settings' = 'hubs'
   ) => {
     setAdminStudioInitialTab(tab);
     setAdminStudioOpen(true);
   };
+
+  // Sync UI Theme (Obsidian Dark vs Silver Crystal Glass)
+  const normalizeTheme = (val?: string | null): UiTheme =>
+    val === 'crystal_glass' ? 'crystal_glass' : 'default';
+
+  const [cachedTheme] = useState<UiTheme>(() => {
+    try {
+      return normalizeTheme(localStorage.getItem('domios_ui_theme'));
+    } catch {
+      return 'default';
+    }
+  });
+  const activeUiTheme: UiTheme = data?.config?.ui_theme
+    ? normalizeTheme(data.config.ui_theme)
+    : cachedTheme;
+
+  React.useEffect(() => {
+    document.documentElement.setAttribute('data-theme', activeUiTheme);
+    try {
+      localStorage.setItem('domios_ui_theme', activeUiTheme);
+    } catch (_) {}
+  }, [activeUiTheme]);
 
   // Sync initial floor
   React.useEffect(() => {
@@ -58,15 +80,18 @@ export const App: React.FC = () => {
 
   if (authLoading || bootstrapLoading) {
     return (
-      <div className="min-h-screen bg-[#090A0C] flex flex-col items-center justify-center space-y-4">
-        <img
-          src="/domios_logo.png"
-          alt="DOMIOS Logo"
-          className="w-16 h-16 object-contain drop-shadow-2xl animate-pulse"
-        />
-        <p className="text-xs font-mono text-[#A6A6A6] tracking-widest uppercase animate-pulse">
-          Initializing DOMIOS Smart Building OS...
-        </p>
+      <div className="min-h-screen bg-[#090A0C] relative flex flex-col items-center justify-center space-y-4">
+        {activeUiTheme === 'crystal_glass' && <div className="glass-crystal-backdrop" aria-hidden="true" />}
+        <div className="relative z-10 flex flex-col items-center space-y-4">
+          <img
+            src="/domios_logo.png"
+            alt="DOMIOS Logo"
+            className="w-16 h-16 object-contain drop-shadow-2xl animate-pulse"
+          />
+          <p className="text-xs font-mono text-[#A6A6A6] tracking-widest uppercase animate-pulse">
+            Initializing DOMIOS Smart Building OS...
+          </p>
+        </div>
       </div>
     );
   }
@@ -79,7 +104,8 @@ export const App: React.FC = () => {
   const selectedRoom: Room | undefined = selectedRoomId ? getRoom(selectedRoomId) : undefined;
 
   return (
-    <div className="min-h-screen bg-[#090A0C] text-[#F5F5F5] flex">
+    <div className="min-h-screen bg-[#090A0C] text-[#F5F5F5] flex relative">
+      {activeUiTheme === 'crystal_glass' && <div className="glass-crystal-backdrop" aria-hidden="true" />}
       {/* HomeKey Gate Check */}
       <HomeKeyModal />
 
@@ -245,12 +271,29 @@ export const App: React.FC = () => {
         />
       </div>
 
-      {/* Floating DOMFLY Animated 3D AI Companion (Visible across all pages) */}
+      {/* Live Admin Studio Modal */}
+      {adminStudioOpen && (
+        <AdminStudioPage
+          onClose={() => setAdminStudioOpen(false)}
+          initialTab={adminStudioInitialTab}
+        />
+      )}
+
+      {/* Fullscreen Camera Player Modal */}
+      {fullscreenCamera && (
+        <CameraFullscreenPage
+          camera={fullscreenCamera}
+          onClose={() => setFullscreenCamera(null)}
+        />
+      )}
+
+      {/* Floating DOMFLY Animated 3D AI Companion (Always accessible on top across all themes & studio modals) */}
       <DomflyFloatingCompanion
         isChatOpen={floatingChatOpen}
         onToggleChat={() => setFloatingChatOpen((prev) => !prev)}
         characterState={companionState}
         currentTab={currentTab}
+        adminStudioOpen={adminStudioOpen}
       />
 
       {/* Floating DOMFLY Assistant Chat Drawer */}
@@ -272,22 +315,6 @@ export const App: React.FC = () => {
         }}
         onStateChange={(st) => setCompanionState(st)}
       />
-
-      {/* Live Admin Studio Modal */}
-      {adminStudioOpen && (
-        <AdminStudioPage
-          onClose={() => setAdminStudioOpen(false)}
-          initialTab={adminStudioInitialTab}
-        />
-      )}
-
-      {/* Fullscreen Camera Player Modal */}
-      {fullscreenCamera && (
-        <CameraFullscreenPage
-          camera={fullscreenCamera}
-          onClose={() => setFullscreenCamera(null)}
-        />
-      )}
     </div>
   );
 };

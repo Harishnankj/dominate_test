@@ -151,16 +151,25 @@ export const DomflyCharacter: React.FC<DomflyCharacterProps> = ({
           rotateZ: isGreeting
             ? [-1, 3.5, -2, 2, -1]
             : [-0.8, 0.8, -0.8],
+          rotateX: mouseGaze.rotateX,
+          rotateY: mouseGaze.rotateY,
         }}
         transition={{
-          duration: isSuccess ? 1.2 : isGreeting ? 3.0 : 3.6,
-          repeat: isSuccess || isGreeting ? 0 : Infinity,
-          ease: 'easeInOut',
+          y: {
+            duration: isSuccess ? 1.2 : isGreeting ? 3.0 : 3.6,
+            repeat: isSuccess || isGreeting ? 0 : Infinity,
+            ease: 'easeInOut',
+          },
+          rotateZ: {
+            duration: isSuccess ? 1.2 : isGreeting ? 3.0 : 3.6,
+            repeat: isSuccess || isGreeting ? 0 : Infinity,
+            ease: 'easeInOut',
+          },
+          rotateX: { duration: 0.15, ease: 'easeOut' },
+          rotateY: { duration: 0.15, ease: 'easeOut' },
         }}
         style={{
           transformStyle: 'preserve-3d',
-          transform: `perspective(800px) rotateX(${mouseGaze.rotateX}deg) rotateY(${mouseGaze.rotateY}deg)`,
-          transition: 'transform 0.15s ease-out',
         }}
         whileHover={{ scale: 1.04 }}
         whileTap={{ scale: 0.94 }}
@@ -222,8 +231,17 @@ export const DomflyCharacter: React.FC<DomflyCharacterProps> = ({
           <img
             src="/domfly_companion.png"
             alt="DOMFLY AI Dolphin Companion"
-            className="w-full h-full object-contain pointer-events-none select-none drop-shadow-[0_12px_24px_rgba(168,85,247,0.35)] filter transition-all duration-300"
+            className="w-full h-full object-contain pointer-events-none select-none drop-shadow-[0_12px_24px_rgba(168,85,247,0.35)] filter transition-all duration-300 block"
             draggable={false}
+            style={{
+              minWidth: dim.w,
+              minHeight: dim.h,
+              width: dim.w,
+              height: dim.h,
+              display: 'block',
+              opacity: 1,
+              visibility: 'visible',
+            }}
           />
         </motion.div>
 
@@ -252,7 +270,15 @@ export const DomflyCharacter: React.FC<DomflyCharacterProps> = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.92 }}
             transition={{ duration: 0.2 }}
-            className="absolute -top-7 whitespace-nowrap px-3 py-1 rounded-full bg-[#191A1D]/95 border border-purple-500/40 text-[11px] font-mono font-bold text-white shadow-xl shadow-purple-950/40 backdrop-blur-md flex items-center gap-1.5 pointer-events-none z-30"
+            className="absolute -top-7 whitespace-nowrap px-3 py-1 rounded-full border text-[11px] font-mono font-bold !text-white flex items-center gap-1.5 pointer-events-none z-30"
+            style={{
+              color: '#ffffff',
+              backgroundColor: 'rgba(15, 20, 36, 0.95)',
+              borderColor: 'rgba(168, 85, 247, 0.55)',
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.65), 0 0 12px rgba(168, 85, 247, 0.35)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+            }}
           >
             {isListening ? (
               <>

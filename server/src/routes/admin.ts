@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import YAML from 'yaml';
-import { db } from '../db/index.js';
+import { db, getWallpapersDir } from '../db/index.js';
 import { HaService } from '../services/haService.js';
 import { TTLockService } from '../services/ttlockService.js';
 import { liveSync } from '../websocket/liveSync.js';
@@ -324,17 +324,72 @@ router.delete('/floors/:id', (req, res) => {
   }
 });
 
+// Upload room wallpaper photo (base64 dataUrl -> disk)
+router.post('/wallpapers', (req, res) => {
+  try {
+    const { dataUrl } = req.body;
+    if (!dataUrl || typeof dataUrl !== 'string') {
+      return res.status(400).json({ error: 'dataUrl is required' });
+    }
+    const match = dataUrl.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,(.+)$/i);
+    if (!match) {
+      return res.status(400).json({ error: 'Unsupported image format. Please use PNG, JPG, or WebP.' });
+    }
+    const ext = match[1].toLowerCase() === 'jpeg' ? 'jpg' : match[1].toLowerCase();
+    const buffer = Buffer.from(match[2], 'base64');
+    if (buffer.length > 15 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Image size exceeds 15 MB limit' });
+    }
+    const fileName = `wp_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.${ext}`;
+    const outPath = path.join(getWallpapersDir(), fileName);
+    fs.writeFileSync(outPath, buffer);
+    return res.json({ ok: true, url: `/api/wallpapers/${fileName}`, filename: fileName });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Capture room wallpaper snapshot directly from Go2RTC camera stream
+router.post('/wallpapers/snapshot', async (req, res) => {
+  try {
+    const { streamId } = req.body;
+    if (!streamId) {
+      return res.status(400).json({ error: 'streamId is required' });
+    }
+    const cfg = db.prepare('SELECT go2rtc_base_url FROM building_config WHERE id = 1').get() as any;
+    const baseUrl = (cfg?.go2rtc_base_url && cfg.go2rtc_base_url.trim()) || 'http://127.0.0.1:1984';
+    const cleanBase = baseUrl.replace(/\/+$/, '');
+    const frameRes = await fetch(`${cleanBase}/api/frame.jpeg?src=${encodeURIComponent(streamId)}`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!frameRes.ok) {
+      return res.status(502).json({ error: `Go2RTC snapshot failed (HTTP ${frameRes.status})` });
+    }
+    const arrayBuf = await frameRes.arrayBuffer();
+    const buffer = Buffer.from(arrayBuf);
+    if (buffer.length < 100) {
+      return res.status(502).json({ error: 'Empty frame received from camera' });
+    }
+    const fileName = `wp_cam_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.jpg`;
+    const outPath = path.join(getWallpapersDir(), fileName);
+    fs.writeFileSync(outPath, buffer);
+    return res.json({ ok: true, url: `/api/wallpapers/${fileName}`, filename: fileName });
+  } catch (err: any) {
+    return res.status(500).json({ error: `Camera snapshot failed: ${err.message}` });
+  }
+});
+
 // Rooms CRUD
 router.post('/rooms', (req, res) => {
   try {
-    const { floor_id, ha_hub_id, name, slug, aliases, icon, accent_color, is_meeting_room, sort_order } = req.body;
+    const { floor_id, ha_hub_id, name, slug, aliases, icon, accent_color, is_meeting_room, wallpaper_url, sort_order } = req.body;
     if (!floor_id || !name) return res.status(400).json({ error: 'Floor ID and name are required' });
     const id = `rm_${crypto.randomBytes(4).toString('hex')}`;
     const cleanSlug = (slug || name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
     db.prepare(`
-      INSERT INTO rooms (id, floor_id, ha_hub_id, name, slug, aliases_json, icon, accent_color, is_meeting_room, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO rooms (id, floor_id, ha_hub_id, name, slug, aliases_json, icon, accent_color, is_meeting_room, wallpaper_url, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       floor_id,
@@ -345,6 +400,7 @@ router.post('/rooms', (req, res) => {
       icon || 'Briefcase',
       accent_color || 'primary-400',
       is_meeting_room ? 1 : 0,
+      wallpaper_url || '',
       sort_order || 0
     );
 
@@ -357,7 +413,7 @@ router.post('/rooms', (req, res) => {
 
 router.put('/rooms/:id', (req, res) => {
   try {
-    const { floor_id, ha_hub_id, name, slug, aliases, icon, accent_color, is_meeting_room, sort_order } = req.body;
+    const { floor_id, ha_hub_id, name, slug, aliases, icon, accent_color, is_meeting_room, wallpaper_url, sort_order } = req.body;
     db.prepare(`
       UPDATE rooms SET
         floor_id = COALESCE(?, floor_id),
@@ -368,6 +424,7 @@ router.put('/rooms/:id', (req, res) => {
         icon = COALESCE(?, icon),
         accent_color = COALESCE(?, accent_color),
         is_meeting_room = COALESCE(?, is_meeting_room),
+        wallpaper_url = COALESCE(?, wallpaper_url),
         sort_order = COALESCE(?, sort_order)
       WHERE id = ?
     `).run(
@@ -379,6 +436,7 @@ router.put('/rooms/:id', (req, res) => {
       icon,
       accent_color,
       is_meeting_room !== undefined ? (is_meeting_room ? 1 : 0) : null,
+      wallpaper_url !== undefined ? (wallpaper_url || '') : null,
       sort_order,
       req.params.id
     );
@@ -1188,6 +1246,8 @@ router.post('/config', (req, res) => {
         ttlock_h5_secret = COALESCE(?, ttlock_h5_secret),
         ttlock_legacy_url = COALESCE(?, ttlock_legacy_url),
         excluded_employee_ids_json = COALESCE(?, excluded_employee_ids_json),
+        quick_controls_json = COALESCE(?, quick_controls_json),
+        ui_theme = COALESCE(?, ui_theme),
         updated_at = ?
       WHERE id = 1
     `).run(
@@ -1210,6 +1270,14 @@ router.post('/config', (req, res) => {
       fields.ttlock_h5_secret,
       fields.ttlock_legacy_url,
       fields.excluded_employee_ids ? JSON.stringify(fields.excluded_employee_ids) : null,
+      fields.quick_controls_json !== undefined
+        ? (typeof fields.quick_controls_json === 'string' ? fields.quick_controls_json : JSON.stringify(fields.quick_controls_json))
+        : null,
+      fields.ui_theme === 'crystal_glass' || fields.ui_theme === 'default'
+        ? fields.ui_theme
+        : fields.ui_theme === 'glassmorphism'
+        ? 'default'
+        : null,
       new Date().toISOString()
     );
 
@@ -1283,6 +1351,7 @@ router.post('/import', (req, res) => {
             ttlock_username = COALESCE(?, ttlock_username),
             ttlock_password_md5 = COALESCE(?, ttlock_password_md5),
             ttlock_legacy_url = COALESCE(?, ttlock_legacy_url),
+            ui_theme = COALESCE(?, ui_theme),
             updated_at = ?
           WHERE id = 1
         `).run(
@@ -1302,6 +1371,7 @@ router.post('/import', (req, res) => {
           c.ttlock_username,
           c.ttlock_password_md5,
           c.ttlock_legacy_url,
+          c.ui_theme || null,
           new Date().toISOString()
         );
       }
@@ -1324,9 +1394,9 @@ router.post('/import', (req, res) => {
 
       if (Array.isArray(data.rooms)) {
         db.prepare('DELETE FROM rooms').run();
-        const ins = db.prepare('INSERT INTO rooms (id, floor_id, ha_hub_id, name, slug, aliases_json, icon, accent_color, is_meeting_room, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        const ins = db.prepare('INSERT INTO rooms (id, floor_id, ha_hub_id, name, slug, aliases_json, icon, accent_color, is_meeting_room, wallpaper_url, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         for (const r of data.rooms) {
-          ins.run(r.id, r.floor_id, r.ha_hub_id, r.name, r.slug, r.aliases_json || '[]', r.icon, r.accent_color, r.is_meeting_room ? 1 : 0, r.sort_order ?? 0);
+          ins.run(r.id, r.floor_id, r.ha_hub_id, r.name, r.slug, r.aliases_json || '[]', r.icon, r.accent_color, r.is_meeting_room ? 1 : 0, r.wallpaper_url || '', r.sort_order ?? 0);
         }
       }
 

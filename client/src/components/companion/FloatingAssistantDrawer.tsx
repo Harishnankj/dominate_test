@@ -34,8 +34,9 @@ export const FloatingAssistantDrawer: React.FC<FloatingAssistantDrawerProps> = (
             stiffness: 320,
             damping: 28,
           }}
-          className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 w-[calc(100vw-32px)] sm:w-[460px] h-[600px] max-h-[82vh] bg-[#191A1D]/98 border border-[#383A3E] rounded-3xl shadow-2xl shadow-black/80 flex flex-col overflow-hidden backdrop-blur-2xl"
+          className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 w-[calc(100vw-32px)] sm:w-[460px] h-[600px] max-h-[82vh] bg-[#191A1D]/98 border border-[#383A3E] rounded-3xl shadow-2xl shadow-black/80 flex flex-col overflow-hidden backdrop-blur-2xl"
           style={{
+            zIndex: 100000,
             boxShadow: '0 20px 50px -10px rgba(0, 0, 0, 0.8), 0 0 30px rgba(168, 85, 247, 0.15)',
           }}
         >

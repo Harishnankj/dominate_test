@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Star,
   Power,
@@ -45,8 +45,17 @@ import {
   EnergyMeterTile,
   SmartKnobTile,
 } from '../components/devices/SpecialtyTiles';
-import type { Camera, Room, Device, PresetScene } from '../types';
-import { PresetEditModal, PRESET_ICON_MAP } from '../components/scenes/PresetEditModal';
+import type { Camera, Room, Device, PresetScene, QuickControlConfig } from '../types';
+import { PRESET_ICON_MAP } from '../components/scenes/PresetEditModal';
+import { QUICK_CONTROL_ICON_MAP } from '../components/dashboard/QuickControlsEditModal';
+import { QuickControlDevicesModal } from '../components/dashboard/QuickControlDevicesModal';
+import {
+  parseQuickControls,
+  getDevicesForQuickControl,
+  getDeviceRoleCategory,
+  resolveLiveDeviceStatus,
+  actuateSingleDevice,
+} from '../utils/deviceCategory';
 
 interface DashboardPageProps {
   onSelectRoom: (roomId: string) => void;
@@ -64,8 +73,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   onOpenFullscreenCamera,
 }) => {
   const { data, setZ2mState, setTuyaState, z2mStates, tuyaStates } = useBootstrap();
-  const { favorites, isFavorite, isAdmin } = useAuth();
-  const { callService } = useHA();
+  const { favorites, isFavorite } = useAuth();
+  const { callService, getEntity } = useHA();
 
   const allDevices = data?.devices || [];
   const allRooms = data?.rooms || [];
@@ -75,53 +84,30 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   // Pinned favorites
   const displayDevices = allDevices.filter((d) => isFavorite(d.id));
 
+  const liveStateHelpers = useMemo(
+    () => ({
+      getEntity,
+      z2mStates,
+      tuyaStates,
+      virtualStates: data?.virtual_device_states,
+    }),
+    [getEntity, z2mStates, tuyaStates, data?.virtual_device_states]
+  );
+
   // --- Real Energy Calculation ---
-  const { currentPowerW, todayKwh, activeLightsCount, activeAcsCount, activeFansCount, activePlugsCount } = useMemo(() => {
+  const { currentPowerW, todayKwh } = useMemo(() => {
     let powerSum = 0;
-    let lightsOn = 0;
-    let acsOn = 0;
-    let fansOn = 0;
-    let plugsOn = 0;
 
     for (const dev of allDevices) {
-      let config: any = {};
-      try { config = JSON.parse(dev.config_json); } catch (_) {}
-      const z2mKey = dev.z2m_friendly_name || config.z2m_friendly_name;
-      const tuyaId = dev.tuya_device_id || config.tuya_device_id;
-
-      const zState = z2mKey ? z2mStates[z2mKey] : null;
-      const tState = tuyaId ? tuyaStates[tuyaId] : null;
-
-      // Extract power
-      if (zState?.power && typeof zState.power === 'number') powerSum += zState.power;
-      if (tState?.cur_power && typeof tState.cur_power === 'number') powerSum += tState.cur_power / 10;
-
-      // Track active device counts
-      const isOn =
-        zState?.state === 'ON' ||
-        tState?.switch_1 === true ||
-        tState?.state === 'ON';
-
-      if (dev.type === 'switch_light' || dev.type === 'dimmable_light') {
-        if (isOn) {
-          lightsOn++;
-          powerSum += 12; // Baseline LED wattage estimate if not metered
-        }
-      } else if (dev.type === 'ac_ir' || dev.type === 'climate') {
-        if (isOn || zState?.power > 50) {
-          acsOn++;
-          powerSum += 650; // Inverter AC baseline draw
-        }
-      } else if (dev.type === 'exhaust_fan') {
-        if (isOn) {
-          fansOn++;
-          powerSum += 45;
-        }
-      } else if (config.category === 'socket' || dev.subtitle?.toLowerCase().includes('plug')) {
-        if (isOn) {
-          plugsOn++;
-          powerSum += 30;
-        }
+      const { isOn, powerW } = resolveLiveDeviceStatus(dev, liveStateHelpers);
+      if (powerW !== null && powerW > 0) {
+        powerSum += powerW;
+      } else if (isOn) {
+        const role = getDeviceRoleCategory(dev);
+        if (role === 'ac') powerSum += 650;
+        else if (role === 'fan') powerSum += 45;
+        else if (role === 'plug' || role === 'meter') powerSum += 30;
+        else if (role === 'light') powerSum += 12;
       }
     }
 
@@ -131,71 +117,44 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     return {
       currentPowerW: Math.round(baselineWatts),
       todayKwh: estTodayKwh,
-      activeLightsCount: lightsOn,
-      activeAcsCount: acsOn,
-      activeFansCount: fansOn,
-      activePlugsCount: plugsOn,
     };
-  }, [allDevices, z2mStates, tuyaStates]);
+  }, [allDevices, liveStateHelpers]);
 
-  // --- Quick Global Controls ---
-  const [lightsLoading, setLightsLoading] = useState(false);
-  const [allLightsOn, setAllLightsOn] = useState(false);
+  // --- Configurable Quick Controls ---
+  const quickControls = useMemo(
+    () => parseQuickControls(data?.config?.quick_controls_json).filter((qc) => qc.enabled),
+    [data?.config?.quick_controls_json]
+  );
 
-  const handleToggleAllLights = async () => {
-    setLightsLoading(true);
-    const targetState = !allLightsOn;
-    try {
-      for (const dev of allDevices) {
-        if (dev.type === 'switch_light' || dev.type === 'dimmable_light') {
-          let devConfig: any = {};
-          try { devConfig = JSON.parse(dev.config_json); } catch (_) {}
-          const z2mName = dev.z2m_friendly_name || devConfig.z2m_friendly_name;
-          const tuyaId = dev.tuya_device_id || devConfig.tuya_device_id;
+  const [inspectingControl, setInspectingControl] = useState<QuickControlConfig | null>(null);
+  const [togglingControlId, setTogglingControlId] = useState<string | null>(null);
 
-          if (z2mName) {
-            setZ2mState(z2mName, { state: targetState ? 'ON' : 'OFF' }).catch(() => {});
-          }
-          if (tuyaId) {
-            setTuyaState(tuyaId, { switch_1: targetState, state: targetState ? 'ON' : 'OFF' }).catch(() => {});
-          }
-          if (dev.entity_id) {
-            const domain = dev.entity_id.split('.')[0];
-            callService(domain, targetState ? 'turn_on' : 'turn_off', { entity_id: dev.entity_id }).catch(() => {});
-          }
-        }
-      }
-      setAllLightsOn(targetState);
-    } finally {
-      setLightsLoading(false);
+  const handleToggleQuickControl = async (
+    qc: QuickControlConfig,
+    groupDevices: Device[],
+    anyOn: boolean
+  ) => {
+    if (qc.category === 'power' || groupDevices.length === 0) {
+      setInspectingControl(qc);
+      return;
     }
-  };
 
-  const [acLoading, setAcLoading] = useState(false);
-  const [allAcOn, setAllAcOn] = useState(true);
-
-  const handleToggleAllAc = async () => {
-    setAcLoading(true);
-    const target = !allAcOn;
+    setTogglingControlId(qc.id);
+    const targetOn = !anyOn;
     try {
-      for (const dev of allDevices) {
-        if (dev.type === 'ac_ir') {
-          ApiService.sendAcIrCommand(dev.id, target ? 'on' : 'off', {
-            power: target,
-            temp: 24,
-            mode: 'cool',
-            fan: 'auto',
-          }).catch(() => {});
-        } else if (dev.type === 'climate' && dev.entity_id) {
-          callService('climate', target ? 'set_hvac_mode' : 'turn_off', {
-            entity_id: dev.entity_id,
-            hvac_mode: target ? 'cool' : 'off',
-          }).catch(() => {});
-        }
-      }
-      setAllAcOn(target);
+      await Promise.all(
+        groupDevices.map((dev) =>
+          actuateSingleDevice(dev, targetOn, {
+            callService,
+            setZ2mState,
+            setTuyaState,
+            sendAcIrCommand: ApiService.sendAcIrCommand,
+            moveRelayBlinds: ApiService.moveRelayBlinds,
+          })
+        )
+      );
     } finally {
-      setAcLoading(false);
+      setTimeout(() => setTogglingControlId(null), 400);
     }
   };
 
@@ -289,7 +248,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         ];
 
   const [runningSceneId, setRunningSceneId] = useState<string | null>(null);
-  const [editingPreset, setEditingPreset] = useState<PresetScene | null>(null);
 
   const handleRunScene = async (scene: PresetScene) => {
     setRunningSceneId(scene.id);
@@ -308,6 +266,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           const isOff = item.state === 'OFF';
           const bPct = item.brightness ?? 80;
           for (const dev of allDevices) {
+            if (getDeviceRoleCategory(dev) !== 'light') continue;
             let cfg: any = {};
             try { cfg = JSON.parse(dev.config_json); } catch (_) {}
             const zName = dev.z2m_friendly_name || cfg.z2m_friendly_name;
@@ -319,18 +278,36 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               if (zName) setZ2mState(zName, { state: isOff ? 'OFF' : 'ON' }).catch(() => {});
               if (tuyaId) setTuyaState(tuyaId, { switch_1: !isOff }).catch(() => {});
             }
+            if (dev.entity_id) {
+              const domain = dev.entity_id.split('.')[0] || 'switch';
+              callService(domain, isOff ? 'turn_off' : 'turn_on', { entity_id: dev.entity_id }).catch(() => {});
+            }
+          }
+        } else if (item.target === 'climate') {
+          const turnOn = item.state !== 'OFF';
+          for (const dev of allDevices) {
+            if (getDeviceRoleCategory(dev) !== 'ac') continue;
+            actuateSingleDevice(dev, turnOn, {
+              callService,
+              setZ2mState,
+              setTuyaState,
+              sendAcIrCommand: ApiService.sendAcIrCommand,
+              moveRelayBlinds: ApiService.moveRelayBlinds,
+            }).catch(() => {});
           }
         } else if (item.target === 'locks' && item.action === 'lock') {
           handleLockAllDoors();
         } else if (item.target === 'plugs' && item.state === 'OFF') {
           for (const dev of allDevices) {
-            if (dev.type === 'switch_light') {
-              let cfg: any = {};
-              try { cfg = JSON.parse(dev.config_json); } catch (_) {}
-              const zName = dev.z2m_friendly_name || cfg.z2m_friendly_name;
-              const tuyaId = dev.tuya_device_id || cfg.tuya_device_id;
-              if (zName) setZ2mState(zName, { state: 'OFF' }).catch(() => {});
-              if (tuyaId) setTuyaState(tuyaId, { switch_1: false }).catch(() => {});
+            const role = getDeviceRoleCategory(dev);
+            if (role === 'plug' || role === 'meter' || role === 'fan') {
+              actuateSingleDevice(dev, false, {
+                callService,
+                setZ2mState,
+                setTuyaState,
+                sendAcIrCommand: ApiService.sendAcIrCommand,
+                moveRelayBlinds: ApiService.moveRelayBlinds,
+              }).catch(() => {});
             }
           }
         }
@@ -339,6 +316,55 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       setTimeout(() => setRunningSceneId(null), 1000);
     }
   };
+
+  // Live local time for time-aware greeting, status & routine
+  const [now, setNow] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const timeHero = useMemo(() => {
+    const hour = now.getHours();
+    const dateStr = now.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const liveClockLine = `${dateStr} · ${timeStr}`;
+
+    if (hour >= 5 && hour < 12) {
+      return {
+        greeting: 'Good Morning',
+        status: liveClockLine,
+        routineLabel: 'Day Routine',
+        RoutineIcon: Sun,
+        targetSceneId: 'work_mode',
+      };
+    }
+    if (hour >= 12 && hour < 17) {
+      return {
+        greeting: 'Good Afternoon',
+        status: liveClockLine,
+        routineLabel: 'Day Routine',
+        RoutineIcon: Sun,
+        targetSceneId: 'work_mode',
+      };
+    }
+    if (hour >= 17 && hour < 21) {
+      return {
+        greeting: 'Good Evening',
+        status: liveClockLine,
+        routineLabel: 'Evening Routine',
+        RoutineIcon: Sparkles,
+        targetSceneId: 'meeting_mode',
+      };
+    }
+    return {
+      greeting: 'Good Night',
+      status: liveClockLine,
+      routineLabel: 'Night Routine',
+      RoutineIcon: Moon,
+      targetSceneId: 'night_mode',
+    };
+  }, [now]);
 
   // Curated room background images
   const getRoomImage = (name: string, index: number) => {
@@ -379,14 +405,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
         <div className="relative z-10 p-6 md:p-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div className="space-y-1.5">
-            <span className="text-[11px] font-mono tracking-widest text-[#A6A6A6] uppercase">
-              Command Overview
-            </span>
             <h1 className="text-2xl md:text-3xl font-extrabold text-[#F5F5F5] tracking-tight">
-              Good Morning, <span className="text-white">DOMINATE</span>
+              {timeHero.greeting}
             </h1>
             <p className="text-xs md:text-sm text-[#A6A6A6]">
-              Your Smart Building at a Glance · All systems nominal
+              {timeHero.status}
             </p>
           </div>
 
@@ -400,11 +423,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               <span>{lockingAll ? 'Locking All...' : lockAllMsg || 'Full Lockdown'}</span>
             </button>
             <button
-              onClick={() => handleRunScene(presetScenes[0])}
+              onClick={() =>
+                handleRunScene(
+                  presetScenes.find((s) => s.id === timeHero.targetSceneId) || presetScenes[0]
+                )
+              }
               className="px-4 py-2.5 rounded-xl bg-[#202226] hover:bg-[#282B30] text-[#F5F5F5] border border-[#383A3E] text-xs font-medium flex items-center gap-2 transition-all"
             >
-              <Sun className="w-3.5 h-3.5 text-white" />
-              <span>Day Routine</span>
+              <timeHero.RoutineIcon className="w-3.5 h-3.5 text-white" />
+              <span>{timeHero.routineLabel}</span>
             </button>
           </div>
         </div>
@@ -500,147 +527,103 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {/* 1. All Lights */}
-          <button
-            onClick={handleToggleAllLights}
-            disabled={lightsLoading}
-            className={`p-4 rounded-2xl border text-left transition-all group tile-hover flex flex-col justify-between h-28 ${
-              allLightsOn
-                ? 'bg-white text-[#090A0C] border-white shadow-card'
-                : 'bg-[#191A1D] border-[#383A3E] text-[#F5F5F5] hover:border-white/40'
-            }`}
-          >
-            <div className="flex items-center justify-between w-full">
-              <Lightbulb className={`w-5 h-5 ${allLightsOn ? 'text-[#090A0C]' : 'text-white'}`} />
-              <span
-                className={`text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded ${
-                  allLightsOn ? 'bg-[#090A0C]/10 text-[#090A0C]' : 'bg-[#202226] text-[#A6A6A6]'
+          {quickControls.map((qc) => {
+            const Icon = QUICK_CONTROL_ICON_MAP[qc.icon] || Power;
+            const groupDevices = getDevicesForQuickControl(qc, allDevices);
+            const activeDevicesCount = groupDevices.filter(
+              (d) => resolveLiveDeviceStatus(d, liveStateHelpers).isOn
+            ).length;
+            const isPowerCard = qc.category === 'power';
+            const isHighlighted = !isPowerCard && activeDevicesCount > 0;
+            const isBusy = togglingControlId === qc.id;
+
+            let statusBadgeText = isHighlighted ? 'ACTIVE' : 'OFF';
+            if (qc.category === 'climate') statusBadgeText = isHighlighted ? 'COOL' : 'OFF';
+            else if (qc.category === 'curtains') statusBadgeText = isHighlighted ? 'OPEN' : 'CLOSED';
+            else if (qc.category === 'plugs') statusBadgeText = isHighlighted ? 'ON' : 'OFF';
+
+            let detailLine = qc.subtitle || '';
+            if (isPowerCard) {
+              detailLine = `${currentPowerW} W Load`;
+            } else if (groupDevices.length === 0) {
+              detailLine = 'Tap to assign';
+            } else if (groupDevices.length === 1) {
+              detailLine = `${groupDevices[0].name} • ${activeDevicesCount > 0 ? 'ON' : 'OFF'}`;
+            } else if (qc.category === 'climate') {
+              detailLine = `${activeDevicesCount} of ${groupDevices.length} running`;
+            } else if (qc.category === 'lights') {
+              detailLine = `${activeDevicesCount} of ${groupDevices.length} on`;
+            } else {
+              detailLine = `${activeDevicesCount} of ${groupDevices.length} active`;
+            }
+
+            return (
+              <div
+                key={qc.id}
+                onClick={() => !isBusy && handleToggleQuickControl(qc, groupDevices, isHighlighted)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    if (!isBusy) handleToggleQuickControl(qc, groupDevices, isHighlighted);
+                  }
+                }}
+                className={`p-4 rounded-2xl border text-left transition-all group tile-hover flex flex-col justify-between h-28 cursor-pointer select-none ${
+                  isHighlighted
+                    ? 'bg-white text-[#090A0C] border-white shadow-card'
+                    : 'bg-[#191A1D] border-[#383A3E] text-[#F5F5F5] hover:border-white/40'
                 }`}
               >
-                {allLightsOn ? 'ACTIVE' : 'OFF'}
-              </span>
-            </div>
-            <div>
-              <div className="text-xs font-bold">All Lights</div>
-              <p className={`text-[10px] ${allLightsOn ? 'text-[#090A0C]/70' : 'text-[#777777]'}`}>
-                {activeLightsCount} fixtures on
-              </p>
-            </div>
-          </button>
+                <div className="flex items-center justify-between w-full gap-1">
+                  <Icon className={`w-5 h-5 shrink-0 ${isHighlighted ? 'text-[#090A0C]' : 'text-white'}`} />
+                  <div className="flex items-center gap-1">
+                    {isPowerCard ? (
+                      <span className="w-2 h-2 rounded-full bg-[#22D68A]" />
+                    ) : (
+                      <span
+                        className={`text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded ${
+                          isHighlighted ? 'bg-[#090A0C]/10 text-[#090A0C]' : 'bg-[#202226] text-[#A6A6A6]'
+                        }`}
+                      >
+                        {isBusy ? '...' : statusBadgeText}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setInspectingControl(qc);
+                      }}
+                      className={`p-1 rounded-lg transition-colors ${
+                        isHighlighted
+                          ? 'text-[#090A0C]/60 hover:text-[#090A0C] hover:bg-[#090A0C]/10'
+                          : 'text-[#777777] hover:text-white hover:bg-[#282B30]'
+                      }`}
+                      title={`View & control ${qc.label} devices (${groupDevices.length})`}
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
 
-          {/* 2. Climate & AC */}
-          <button
-            onClick={handleToggleAllAc}
-            disabled={acLoading}
-            className={`p-4 rounded-2xl border text-left transition-all group tile-hover flex flex-col justify-between h-28 ${
-              allAcOn
-                ? 'bg-white text-[#090A0C] border-white shadow-card'
-                : 'bg-[#191A1D] border-[#383A3E] text-[#F5F5F5] hover:border-white/40'
-            }`}
-          >
-            <div className="flex items-center justify-between w-full">
-              <Thermometer className={`w-5 h-5 ${allAcOn ? 'text-[#090A0C]' : 'text-white'}`} />
-              <span
-                className={`text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded ${
-                  allAcOn ? 'bg-[#090A0C]/10 text-[#090A0C]' : 'bg-[#202226] text-[#A6A6A6]'
-                }`}
-              >
-                {allAcOn ? 'COOL' : 'OFF'}
-              </span>
-            </div>
-            <div>
-              <div className="text-xs font-bold">AC Climate</div>
-              <p className={`text-[10px] ${allAcOn ? 'text-[#090A0C]/70' : 'text-[#777777]'}`}>
-                {activeAcsCount} zones running
-              </p>
-            </div>
-          </button>
-
-          {/* 3. Ventilation & Fans */}
-          <button
-            onClick={() => {
-              for (const dev of allDevices) {
-                if (dev.type === 'exhaust_fan') {
-                  if (dev.entity_id) callService('switch', 'toggle', { entity_id: dev.entity_id }).catch(() => {});
-                }
-              }
-            }}
-            className="p-4 rounded-2xl bg-[#191A1D] border border-[#383A3E] text-[#F5F5F5] hover:border-white/40 text-left transition-all tile-hover flex flex-col justify-between h-28"
-          >
-            <div className="flex items-center justify-between w-full">
-              <Fan className="w-5 h-5 text-white" />
-              <span className="text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-[#202226] text-[#A6A6A6]">
-                AUTO
-              </span>
-            </div>
-            <div>
-              <div className="text-xs font-bold">Fans & Vents</div>
-              <p className="text-[10px] text-[#777777]">{activeFansCount} active units</p>
-            </div>
-          </button>
-
-          {/* 4. Main Power Grid */}
-          <div className="p-4 rounded-2xl bg-[#191A1D] border border-[#383A3E] text-[#F5F5F5] text-left transition-all tile-hover flex flex-col justify-between h-28">
-            <div className="flex items-center justify-between w-full">
-              <Power className="w-5 h-5 text-white" />
-              <span className="w-2 h-2 rounded-full bg-[#22D68A]" />
-            </div>
-            <div>
-              <div className="text-xs font-bold">Main Power</div>
-              <p className="text-[10px] text-[#22D68A] font-mono font-bold">
-                {currentPowerW} W Load
-              </p>
-            </div>
-          </div>
-
-          {/* 5. Curtains & Blinds */}
-          <button
-            onClick={() => {
-              for (const dev of allDevices) {
-                if (dev.type === 'blinds_relay' || dev.type === 'cover') {
-                  ApiService.moveRelayBlinds(dev.id, 'open').catch(() => {});
-                }
-              }
-            }}
-            className="p-4 rounded-2xl bg-[#191A1D] border border-[#383A3E] text-[#F5F5F5] hover:border-white/40 text-left transition-all tile-hover flex flex-col justify-between h-28"
-          >
-            <div className="flex items-center justify-between w-full">
-              <Wind className="w-5 h-5 text-white" />
-              <span className="text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-[#202226] text-[#A6A6A6]">
-                100%
-              </span>
-            </div>
-            <div>
-              <div className="text-xs font-bold">Curtains</div>
-              <p className="text-[10px] text-[#777777]">Open daylight</p>
-            </div>
-          </button>
-
-          {/* 6. Smart Plugs */}
-          <button
-            onClick={() => {
-              for (const dev of allDevices) {
-                let cfg: any = {};
-                try { cfg = JSON.parse(dev.config_json); } catch (_) {}
-                if (cfg.category === 'socket') {
-                  const zName = dev.z2m_friendly_name || cfg.z2m_friendly_name;
-                  if (zName) setZ2mState(zName, { state: 'TOGGLE' }).catch(() => {});
-                }
-              }
-            }}
-            className="p-4 rounded-2xl bg-[#191A1D] border border-[#383A3E] text-[#F5F5F5] hover:border-white/40 text-left transition-all tile-hover flex flex-col justify-between h-28"
-          >
-            <div className="flex items-center justify-between w-full">
-              <Plug className="w-5 h-5 text-white" />
-              <span className="text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-[#202226] text-[#A6A6A6]">
-                ON
-              </span>
-            </div>
-            <div>
-              <div className="text-xs font-bold">Smart Plugs</div>
-              <p className="text-[10px] text-[#777777]">{activePlugsCount} active relays</p>
-            </div>
-          </button>
+                <div>
+                  <div className="text-xs font-bold truncate">{qc.label}</div>
+                  <p
+                    className={`text-[10px] truncate ${
+                      isPowerCard
+                        ? 'text-[#22D68A] font-mono font-bold'
+                        : isHighlighted
+                        ? 'text-[#090A0C]/70'
+                        : 'text-[#777777]'
+                    }`}
+                  >
+                    {detailLine}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -815,6 +798,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {allRooms.slice(0, 4).map((room, idx) => {
             const roomDevices = allDevices.filter((d) => d.room_id === room.id);
+            const customWallpaper = room.wallpaper_url?.trim();
             return (
               <div
                 key={room.id}
@@ -823,8 +807,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               >
                 {/* Background Photo */}
                 <div
-                  className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-105 opacity-40 mix-blend-luminosity"
-                  style={{ backgroundImage: `url('${getRoomImage(room.name, idx)}')` }}
+                  className={`absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-105 ${
+                    customWallpaper ? 'opacity-70' : 'opacity-40 mix-blend-luminosity'
+                  }`}
+                  style={{ backgroundImage: `url("${customWallpaper || getRoomImage(room.name, idx)}")` }}
                 />
                 {/* Gradient */}
                 <div className="absolute inset-0 bg-gradient-to-t from-[#090A0C] via-[#090A0C]/60 to-transparent" />
@@ -885,16 +871,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     <div className="w-10 h-10 rounded-xl bg-[#202226] border border-[#383A3E] text-white flex items-center justify-center">
                       <Icon className={`w-5 h-5 ${colorClass}`} />
                     </div>
-                    {isAdmin && (
-                      <button
-                        onClick={() => setEditingPreset(scene)}
-                        className="px-2 py-1 rounded-lg bg-[#111214] hover:bg-[#202226] text-[#A6A6A6] hover:text-white border border-[#383A3E] hover:border-white/40 text-[11px] font-semibold flex items-center gap-1.5 transition-all shadow-sm"
-                        title="Customize preset for building"
-                      >
-                        <Sliders className="w-3 h-3" />
-                        <span>Edit</span>
-                      </button>
-                    )}
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-white">{scene.name}</h3>
@@ -1023,11 +999,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
       )}
 
-      {/* Preset Customization Modal (Admin) */}
-      <PresetEditModal
-        isOpen={!!editingPreset}
-        preset={editingPreset}
-        onClose={() => setEditingPreset(null)}
+      {/* Quick Control Devices Inspector Modal */}
+      <QuickControlDevicesModal
+        control={inspectingControl}
+        onClose={() => setInspectingControl(null)}
       />
     </div>
   );

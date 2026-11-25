@@ -48,6 +48,12 @@ import {
   WifiOff,
   Star,
   RotateCcw,
+  Sliders,
+  Image as ImageIcon,
+  Camera as CameraIcon,
+  Crop,
+  Palette,
+  Check,
 } from 'lucide-react';
 import { useBootstrap } from '../../context/BootstrapContext';
 import { useAuth } from '../../context/AuthContext';
@@ -55,8 +61,11 @@ import { useHA } from '../../context/MultiHubHomeAssistantProvider';
 import { ApiService } from '../../services/api';
 import { DeviceMappingModal } from './DeviceMappingModal';
 import { IrCodeEditorModal } from './IrCodeEditorModal';
-import type { Device, DeviceType, Floor, Room, HaHub, IrProfile, Camera, Automation, PresetScene } from '../../types';
+import { RoomWallpaperCropModal } from './RoomWallpaperCropModal';
+import type { Device, DeviceType, Floor, Room, HaHub, IrProfile, Camera, Automation, PresetScene, UiTheme } from '../../types';
 import { PresetEditModal, PRESET_ICON_MAP } from '../scenes/PresetEditModal';
+import { QuickControlsEditModal, QUICK_CONTROL_ICON_MAP } from '../dashboard/QuickControlsEditModal';
+import { parseQuickControls, getDevicesForQuickControl } from '../../utils/deviceCategory';
 
 export type AdminStudioTabType =
   | 'hubs'
@@ -67,6 +76,8 @@ export type AdminStudioTabType =
   | 'ttlock'
   | 'ir'
   | 'automations'
+  | 'quick_controls'
+  | 'theme'
   | 'backup'
   | 'settings';
 
@@ -172,6 +183,43 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
   const [weatherLabel, setWeatherLabel] = useState(data?.config?.weather_label || 'HQ Office');
   const [go2rtcBaseUrl, setGo2rtcBaseUrl] = useState(data?.config?.go2rtc_base_url || 'http://127.0.0.1:1984');
   const [requireHomeKey, setRequireHomeKey] = useState(data?.config?.require_home_key === 1);
+  const [uiTheme, setUiTheme] = useState<UiTheme>(
+    data?.config?.ui_theme === 'crystal_glass' ? 'crystal_glass' : 'default'
+  );
+  const [savingTheme, setSavingTheme] = useState(false);
+
+  React.useEffect(() => {
+    const cfgTheme = data?.config?.ui_theme;
+    if (cfgTheme === 'crystal_glass' || cfgTheme === 'default') {
+      setUiTheme(cfgTheme);
+    } else if (cfgTheme === 'glassmorphism') {
+      setUiTheme('default');
+    }
+  }, [data?.config?.ui_theme]);
+
+  const handleSelectUiTheme = async (nextTheme: UiTheme) => {
+    if (savingTheme) return;
+    setUiTheme(nextTheme);
+    document.documentElement.setAttribute('data-theme', nextTheme);
+    try {
+      localStorage.setItem('domios_ui_theme', nextTheme);
+    } catch (_) { }
+
+    setSavingTheme(true);
+    try {
+      await ApiService.updateConfig({ ui_theme: nextTheme });
+      await refreshBootstrap();
+      showStatus(
+        nextTheme === 'crystal_glass'
+          ? 'Silver Crystal Glass theme activated'
+          : 'Obsidian Dark (Present) theme activated'
+      );
+    } catch (err: any) {
+      showStatus(err.message || 'Failed to update theme', true);
+    } finally {
+      setSavingTheme(false);
+    }
+  };
 
   // Zigbee2MQTT State
   const [z2mBrokerUrl, setZ2mBrokerUrl] = useState(data?.config?.mqtt_broker_url || 'mqtt://127.0.0.1:1883');
@@ -216,7 +264,7 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
       if (devicesRes?.ok) {
         setZ2mDevicesList(devicesRes.devices || []);
       }
-    } catch (_) {}
+    } catch (_) { }
     setLoadingZ2m(false);
   }, []);
 
@@ -409,7 +457,7 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
       if (devicesRes?.ok) {
         setTuyaDevicesList(devicesRes.devices || []);
       }
-    } catch (_) {}
+    } catch (_) { }
     setLoadingTuya(false);
   }, []);
 
@@ -534,6 +582,8 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
   // Automations Studio State
   const [editingAutomation, setEditingAutomation] = useState<Partial<Automation> | null>(null);
   const [editingAdminPreset, setEditingAdminPreset] = useState<PresetScene | null>(null);
+  const [quickEditOpen, setQuickEditOpen] = useState(false);
+  const [quickEditTargetId, setQuickEditTargetId] = useState<string | null>(null);
   const [autoName, setAutoName] = useState('');
   const [autoEnabled, setAutoEnabled] = useState(true);
   const [autoTriggerType, setAutoTriggerType] = useState<'time' | 'manual' | 'presence' | 'cyclic'>('time');
@@ -584,7 +634,7 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
     let tr: any = {};
     try {
       tr = JSON.parse(auto.trigger_json || '{}');
-    } catch (_) {}
+    } catch (_) { }
 
     if (tr.type === 'time') {
       setAutoTriggerType('time');
@@ -610,7 +660,7 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
     let parsedSteps: any[] = [];
     try {
       parsedSteps = JSON.parse(auto.steps_json || auto.actions_json || '[]');
-    } catch (_) {}
+    } catch (_) { }
 
     if (Array.isArray(parsedSteps) && parsedSteps.length > 0) {
       setAutoSteps(parsedSteps);
@@ -635,31 +685,31 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
       autoTriggerType === 'time'
         ? { type: 'time', time: autoTriggerTime, days: autoTriggerDays }
         : autoTriggerType === 'presence'
-        ? { type: 'presence', device_id: autoTriggerDeviceId, state: 'on' }
-        : autoTriggerType === 'cyclic'
-        ? {
-            type: 'cyclic',
-            device_id: cyclicDeviceId || (data?.devices?.[0]?.id || ''),
-            on_minutes: Number(cyclicOnMinutes) || 180,
-            off_minutes: Number(cyclicOffMinutes) || 15,
-            all_day: cyclicAllDay,
-            start_time: cyclicStartTime,
-            end_time: cyclicEndTime,
-            days: cyclicDays,
-            resume_temp: Number(cyclicResumeTemp) || 24,
-          }
-        : { type: 'manual' };
+          ? { type: 'presence', device_id: autoTriggerDeviceId, state: 'on' }
+          : autoTriggerType === 'cyclic'
+            ? {
+              type: 'cyclic',
+              device_id: cyclicDeviceId || (data?.devices?.[0]?.id || ''),
+              on_minutes: Number(cyclicOnMinutes) || 180,
+              off_minutes: Number(cyclicOffMinutes) || 15,
+              all_day: cyclicAllDay,
+              start_time: cyclicStartTime,
+              end_time: cyclicEndTime,
+              days: cyclicDays,
+              resume_temp: Number(cyclicResumeTemp) || 24,
+            }
+            : { type: 'manual' };
 
     const targetSteps =
       autoTriggerType === 'cyclic'
         ? [
-            { device_id: cyclicDeviceId || (data?.devices?.[0]?.id || ''), action: 'turn_off' },
-            {
-              device_id: cyclicDeviceId || (data?.devices?.[0]?.id || ''),
-              action: 'turn_on',
-              value: { temp: Number(cyclicResumeTemp) || 24 },
-            },
-          ]
+          { device_id: cyclicDeviceId || (data?.devices?.[0]?.id || ''), action: 'turn_off' },
+          {
+            device_id: cyclicDeviceId || (data?.devices?.[0]?.id || ''),
+            action: 'turn_on',
+            value: { temp: Number(cyclicResumeTemp) || 24 },
+          },
+        ]
         : autoSteps;
 
     const payload = {
@@ -964,6 +1014,60 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
     }
   };
 
+  const [uploadingWallpaper, setUploadingWallpaper] = useState(false);
+  const [cropSourceUrl, setCropSourceUrl] = useState<string | null>(null);
+
+  const handleRoomWallpaperUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Failed to read image file'));
+        reader.onload = () => resolve(String(reader.result));
+        reader.readAsDataURL(file);
+      });
+      setCropSourceUrl(dataUrl);
+    } catch (err: any) {
+      showStatus(err.message || 'Failed to read image file', true);
+    }
+  };
+
+  const handleApplyCroppedWallpaper = async (croppedDataUrl: string) => {
+    setUploadingWallpaper(true);
+    try {
+      const res = await ApiService.uploadRoomWallpaper(croppedDataUrl);
+      if (res.ok && res.url) {
+        setEditingRoom((prev) => (prev ? { ...prev, wallpaper_url: res.url } : null));
+        setCropSourceUrl(null);
+        showStatus('Room wallpaper saved');
+      }
+    } catch (err: any) {
+      showStatus(err.message || 'Failed to upload wallpaper', true);
+    } finally {
+      setUploadingWallpaper(false);
+    }
+  };
+
+  const handleCaptureCameraWallpaper = async () => {
+    if (!editingRoom?.id) return;
+    const roomCam = (data?.cameras || []).find((c) => c.room_id === editingRoom.id);
+    if (!roomCam) return;
+    setUploadingWallpaper(true);
+    try {
+      const res = await ApiService.captureCameraWallpaper(roomCam.stream_id);
+      if (res.ok && res.url) {
+        setCropSourceUrl(res.url);
+      }
+    } catch (err: any) {
+      showStatus(err.message || 'Camera snapshot failed', true);
+    } finally {
+      setUploadingWallpaper(false);
+    }
+  };
+
   const handleSaveRoom = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingRoom?.name?.trim()) return;
@@ -1166,6 +1270,7 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
         weather_label: weatherLabel,
         go2rtc_base_url: go2rtcBaseUrl,
         require_home_key: requireHomeKey ? 1 : 0,
+        ui_theme: uiTheme,
       });
       await refreshBootstrap();
       showStatus('Settings updated');
@@ -1211,8 +1316,23 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
   const activeFloor = (data?.floors || []).find((f) => f.id === selectedFloorId) || (data?.floors || [])[0];
   const activeRoom = (data?.rooms || []).find((r) => r.id === selectedRoomId);
 
+  const adminTabs = [
+    { id: 'hubs', label: 'Home Assistant Hubs', icon: Server },
+    { id: 'z2m', label: 'Zigbee2MQTT (Direct)', icon: Radio },
+    { id: 'tuya', label: 'Tuya & Wi-Fi (Direct)', icon: Wifi },
+    { id: 'floors', label: 'Floors & Rooms & Devices', icon: Layers },
+    { id: 'cameras', label: 'CCTV & Go2RTC', icon: Video },
+    { id: 'ttlock', label: 'TTLock & HR Biometrics', icon: Lock },
+    { id: 'ir', label: 'IR Profiles & Learner', icon: Sparkles },
+    { id: 'automations', label: 'Automations & Cron', icon: Wand2 },
+    { id: 'quick_controls', label: 'Quick Controls', icon: Sliders },
+    { id: 'theme', label: 'Theme & Appearance', icon: Palette },
+    { id: 'backup', label: 'Backup & Restore', icon: Download },
+    { id: 'settings', label: 'Building Settings', icon: Settings },
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 bg-[#090d16] flex flex-col overflow-hidden text-slate-100">
+    <div className="admin-studio-root fixed inset-0 z-50 bg-[#090d16] flex flex-col overflow-hidden text-slate-100" style={{ isolation: 'isolate' }}>
       {/* Top Studio Navbar */}
       <div className="glass-panel border-b border-white/10 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -1228,11 +1348,10 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
         <div className="flex items-center gap-3">
           {statusMsg && (
             <span
-              className={`text-xs px-3 py-1 rounded-lg border font-mono animate-in fade-in ${
-                statusMsg.error
-                  ? 'bg-rose-500/15 border-rose-500/30 text-rose-300'
-                  : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-              }`}
+              className={`text-xs px-3 py-1 rounded-lg border font-mono animate-in fade-in ${statusMsg.error
+                ? 'bg-rose-500/15 border-rose-500/30 text-rose-300'
+                : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                }`}
             >
               {statusMsg.text}
             </span>
@@ -1246,45 +1365,53 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
         </div>
       </div>
 
+      {/* Mobile Tab Strip */}
+      <div className="md:hidden glass-panel border-b border-white/10 px-3 py-2 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+        {adminTabs.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id as any)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold shrink-0 transition-all ${isActive
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold'
+                : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
+                }`}
+            >
+              <Icon className="w-3.5 h-3.5 shrink-0" />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Main Container with Sidebar Tabs */}
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar Nav */}
         <div className="w-64 glass-panel border-r border-white/10 p-3 space-y-1 overflow-y-auto hidden md:block">
-          {[
-            { id: 'hubs', label: 'Home Assistant Hubs', icon: Server },
-            { id: 'z2m', label: 'Zigbee2MQTT (Direct)', icon: Radio },
-            { id: 'tuya', label: 'Tuya & Wi-Fi (Direct)', icon: Wifi },
-            { id: 'floors', label: 'Floors & Rooms & Devices', icon: Layers },
-            { id: 'cameras', label: 'CCTV & Go2RTC', icon: Video },
-            { id: 'ttlock', label: 'TTLock & HR Biometrics', icon: Lock },
-            { id: 'ir', label: 'IR Profiles & Learner', icon: Sparkles },
-            { id: 'automations', label: 'Automations & Cron', icon: Wand2 },
-            { id: 'backup', label: 'Backup & Restore', icon: Download },
-            { id: 'settings', label: 'Building Settings', icon: Settings },
-          ].map((item) => {
+          {adminTabs.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id as any)}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                  isActive
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-glow font-bold'
-                    : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
-                }`}
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${isActive
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-glow font-bold'
+                  : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'
+                  }`}
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 <span className="flex-1 text-left">{item.label}</span>
                 {item.id === 'hubs' && enabledHaHubs.length > 0 && (
                   <span
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold ${
-                      connectedHaCount === enabledHaHubs.length
-                        ? 'bg-emerald-500/20 text-emerald-300'
-                        : connectedHaCount > 0
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold ${connectedHaCount === enabledHaHubs.length
+                      ? 'bg-emerald-500/20 text-emerald-300'
+                      : connectedHaCount > 0
                         ? 'bg-amber-500/20 text-amber-300'
                         : 'bg-rose-500/20 text-rose-300'
-                    }`}
+                      }`}
                   >
                     {connectedHaCount}/{enabledHaHubs.length}
                   </span>
@@ -1304,24 +1431,22 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                   <div className="flex items-center gap-3">
                     <h3 className="text-base font-bold text-white">Home Assistant Hubs</h3>
                     <span
-                      className={`px-2.5 py-0.5 rounded-lg text-xs font-mono font-semibold flex items-center gap-1.5 border ${
-                        connectedHaCount === enabledHaHubs.length && enabledHaHubs.length > 0
-                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                          : connectedHaCount > 0
+                      className={`px-2.5 py-0.5 rounded-lg text-xs font-mono font-semibold flex items-center gap-1.5 border ${connectedHaCount === enabledHaHubs.length && enabledHaHubs.length > 0
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                        : connectedHaCount > 0
                           ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
                           : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
-                      }`}
+                        }`}
                     >
                       <Wifi className="w-3.5 h-3.5" />
                       {enabledHaHubs.length === 0
                         ? 'No Hubs Configured'
-                        : `${connectedHaCount} / ${enabledHaHubs.length} Online (${
-                            connectedHaCount === enabledHaHubs.length
-                              ? 'ALL ACTIVE'
-                              : connectedHaCount > 0
-                              ? 'PARTIAL'
-                              : 'ALL OFFLINE'
-                          })`}
+                        : `${connectedHaCount} / ${enabledHaHubs.length} Online (${connectedHaCount === enabledHaHubs.length
+                          ? 'ALL ACTIVE'
+                          : connectedHaCount > 0
+                            ? 'PARTIAL'
+                            : 'ALL OFFLINE'
+                        })`}
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">
@@ -1379,13 +1504,12 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                   return (
                     <div
                       key={hub.id}
-                      className={`glass-panel rounded-2xl p-4 border transition-all ${
-                        !hub.enabled
-                          ? 'border-white/5 opacity-70'
-                          : isConnected
+                      className={`glass-panel rounded-2xl p-4 border transition-all ${!hub.enabled
+                        ? 'border-white/5 opacity-70'
+                        : isConnected
                           ? 'border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.05)]'
                           : 'border-rose-500/30'
-                      }`}
+                        }`}
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
@@ -1460,11 +1584,10 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                           <button
                             onClick={() => handleToggleHaHubEnabled(hub)}
                             title={hub.enabled ? 'Click to disable hub' : 'Click to enable hub'}
-                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all border active:scale-95 ${
-                              hub.enabled
-                                ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/30'
-                                : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border-slate-700'
-                            }`}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all border active:scale-95 ${hub.enabled
+                              ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border-emerald-500/30'
+                              : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border-slate-700'
+                              }`}
                           >
                             {hub.enabled ? <ToggleRight className="w-4 h-4 text-emerald-400" /> : <ToggleLeft className="w-4 h-4 text-slate-500" />}
                             <span className="hidden sm:inline">{hub.enabled ? 'Enabled' : 'Disabled'}</span>
@@ -1491,11 +1614,10 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                       {/* Diagnostics / Test Result Banner */}
                       {testResult && (
                         <div
-                          className={`mt-3 p-2.5 rounded-xl text-xs font-mono flex items-center justify-between border ${
-                            testResult.ok
-                              ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
-                              : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
-                          }`}
+                          className={`mt-3 p-2.5 rounded-xl text-xs font-mono flex items-center justify-between border ${testResult.ok
+                            ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                            : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                            }`}
                         >
                           <div className="flex items-center gap-2">
                             {testResult.ok ? (
@@ -1671,11 +1793,10 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
 
                   <button
                     onClick={() => handleTogglePermitJoin()}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
-                      permitJoinTimer > 0 && (!activePermitHubId || activePermitHubId === 'all')
-                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
-                        : 'bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/30'
-                    }`}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${permitJoinTimer > 0 && (!activePermitHubId || activePermitHubId === 'all')
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
+                      : 'bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/30'
+                      }`}
                     title="Allow pairing on all coordinators simultaneously"
                   >
                     <Radio className="w-4 h-4" />
@@ -1695,11 +1816,10 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
 
                   <button
                     onClick={() => setShowZ2mGuide(!showZ2mGuide)}
-                    className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all ${
-                      showZ2mGuide
-                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-white/10'
-                    }`}
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all ${showZ2mGuide
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-white/10'
+                      }`}
                     title="Toggle 2-Coordinator Hardware & Config Guide"
                   >
                     <HelpCircle className="w-4 h-4" />
@@ -1747,7 +1867,7 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
                         <span className="text-[10px] font-mono text-slate-400">/opt/zigbee2mqtt/data/configuration.yaml</span>
                       </div>
                       <pre className="text-[11px] font-mono text-slate-300 bg-slate-900/90 p-2.5 rounded-lg overflow-x-auto leading-relaxed">
-{`mqtt:
+                        {`mqtt:
   base_topic: zigbee2mqtt
   server: 'mqtt://192.168.0.180:1883'
 serial:
@@ -1765,7 +1885,7 @@ advanced:
                         <span className="text-[10px] font-mono text-slate-400">/opt/zigbee2mqtt-2/data/configuration.yaml</span>
                       </div>
                       <pre className="text-[11px] font-mono text-slate-300 bg-slate-900/90 p-2.5 rounded-lg overflow-x-auto leading-relaxed">
-{`mqtt:
+                        {`mqtt:
   base_topic: zigbee2mqtt_2   # Distinct topic!
   server: 'mqtt://192.168.0.180:1883'
 serial:
@@ -1795,11 +1915,10 @@ advanced:
                     </span>
                   </div>
                   <span
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                      z2mHubs.some((h) => h.connected)
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-glow-emerald'
-                        : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                    }`}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${z2mHubs.some((h) => h.connected)
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-glow-emerald'
+                      : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                      }`}
                   >
                     {z2mHubs.some((h) => h.connected) ? `${z2mHubs.filter((h) => h.connected).length} ACTIVE` : 'ALL OFFLINE'}
                   </span>
@@ -1813,11 +1932,10 @@ advanced:
                     </span>
                   </div>
                   <span
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                      z2mHubs.some((h) => h.bridgeState === 'online') || z2mStatusData?.bridgeState === 'online'
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-slate-800 text-slate-400 border border-white/5'
-                    }`}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${z2mHubs.some((h) => h.bridgeState === 'online') || z2mStatusData?.bridgeState === 'online'
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-slate-800 text-slate-400 border border-white/5'
+                      }`}
                   >
                     {z2mHubs.some((h) => h.bridgeState === 'online') || z2mStatusData?.bridgeState === 'online'
                       ? 'BRIDGE ONLINE'
@@ -1868,17 +1986,16 @@ advanced:
                     const hubDevCount = typeof hub.devicesCount === 'number'
                       ? hub.devicesCount
                       : z2mDevicesList.filter(
-                          (d) => d.hub_id ? d.hub_id === hub.id : hub.id === (z2mHubs[0]?.id || 'z2m_hub_1')
-                        ).length;
+                        (d) => d.hub_id ? d.hub_id === hub.id : hub.id === (z2mHubs[0]?.id || 'z2m_hub_1')
+                      ).length;
 
                     return (
                       <div
                         key={hub.id}
-                        className={`glass-panel p-4 rounded-2xl border transition-all ${
-                          hub.connected
-                            ? 'border-cyan-500/30 bg-slate-900/60 shadow-lg shadow-cyan-950/20'
-                            : 'border-white/10 bg-slate-900/40'
-                        }`}
+                        className={`glass-panel p-4 rounded-2xl border transition-all ${hub.connected
+                          ? 'border-cyan-500/30 bg-slate-900/60 shadow-lg shadow-cyan-950/20'
+                          : 'border-white/10 bg-slate-900/40'
+                          }`}
                       >
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                           <div className="space-y-1.5">
@@ -1888,22 +2005,20 @@ advanced:
                                 {hub.name}
                               </h5>
                               <span
-                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                                  !hub.enabled
-                                    ? 'bg-slate-800 text-slate-500 border border-white/5'
-                                    : hub.connected
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${!hub.enabled
+                                  ? 'bg-slate-800 text-slate-500 border border-white/5'
+                                  : hub.connected
                                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                                     : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                                }`}
+                                  }`}
                               >
                                 {!hub.enabled ? 'DISABLED' : hub.connected ? 'CONNECTED' : 'OFFLINE'}
                               </span>
                               <span
-                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                                  hub.bridgeState === 'online'
-                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                    : 'bg-slate-800 text-slate-400 border border-white/5'
-                                }`}
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${hub.bridgeState === 'online'
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                  : 'bg-slate-800 text-slate-400 border border-white/5'
+                                  }`}
                               >
                                 {hub.bridgeState === 'online' ? 'BRIDGE ONLINE' : (hub.bridgeState || 'OFFLINE')}
                               </span>
@@ -1940,11 +2055,10 @@ advanced:
                               type="button"
                               onClick={() => handleTogglePermitJoin(hub.id)}
                               disabled={!hub.connected}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-40 ${
-                                isPermitActive
-                                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
-                                  : 'bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/30'
-                              }`}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-40 ${isPermitActive
+                                ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
+                                : 'bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/30'
+                                }`}
                               title="Permit device pairing for 254 seconds on this coordinator only"
                             >
                               <Radio className="w-3.5 h-3.5" />
@@ -2158,11 +2272,10 @@ advanced:
                       <button
                         type="button"
                         onClick={() => setZ2mFilterHubId('all')}
-                        className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
-                          z2mFilterHubId === 'all'
-                            ? 'bg-cyan-500 text-slate-950 font-bold'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
+                        className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${z2mFilterHubId === 'all'
+                          ? 'bg-cyan-500 text-slate-950 font-bold'
+                          : 'text-slate-400 hover:text-white'
+                          }`}
                       >
                         All ({z2mDevicesList.length})
                       </button>
@@ -2170,18 +2283,17 @@ advanced:
                         const count = typeof hub.devicesCount === 'number'
                           ? hub.devicesCount
                           : z2mDevicesList.filter(
-                              (d) => d.hub_id ? d.hub_id === hub.id : hub.id === (z2mHubs[0]?.id || 'z2m_hub_1')
-                            ).length;
+                            (d) => d.hub_id ? d.hub_id === hub.id : hub.id === (z2mHubs[0]?.id || 'z2m_hub_1')
+                          ).length;
                         return (
                           <button
                             key={hub.id}
                             type="button"
                             onClick={() => setZ2mFilterHubId(hub.id)}
-                            className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
-                              z2mFilterHubId === hub.id
-                                ? 'bg-cyan-500 text-slate-950 font-bold'
-                                : 'text-slate-400 hover:text-white'
-                            }`}
+                            className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${z2mFilterHubId === hub.id
+                              ? 'bg-cyan-500 text-slate-950 font-bold'
+                              : 'text-slate-400 hover:text-white'
+                              }`}
                           >
                             {hub.name} ({count})
                           </button>
@@ -2419,11 +2531,10 @@ advanced:
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">Cloud Link</span>
                     <span
-                      className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
-                        tuyaStatusData?.cloud_connected
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                      }`}
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${tuyaStatusData?.cloud_connected
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                        }`}
                     >
                       {tuyaStatusData?.cloud_connected ? 'CONNECTED' : 'DISCONNECTED'}
                     </span>
@@ -2595,13 +2706,12 @@ advanced:
                             <div className="space-y-0.5">
                               <div className="flex items-center gap-1.5">
                                 <h5 className="text-xs font-bold text-white leading-tight">{dev.name}</h5>
-                                <span className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold ${
-                                  dev.is_local
-                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                    : dev.online
+                                <span className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded font-bold ${dev.is_local
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                  : dev.online
                                     ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
                                     : 'bg-slate-800 text-slate-500'
-                                }`}>
+                                  }`}>
                                   {dev.is_local ? 'LOCAL LAN' : dev.online ? 'CLOUD ONLINE' : 'OFFLINE'}
                                 </span>
                               </div>
@@ -2694,11 +2804,10 @@ advanced:
                     return (
                       <div
                         key={floor.id}
-                        className={`group flex items-center rounded-xl p-1 transition-all ${
-                          isSelected
-                            ? 'bg-cyan-500 text-slate-950 shadow-glow font-bold'
-                            : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
-                        }`}
+                        className={`group flex items-center rounded-xl p-1 transition-all ${isSelected
+                          ? 'bg-cyan-500 text-slate-950 shadow-glow font-bold'
+                          : 'bg-slate-900 text-slate-400 hover:text-white border border-white/5'
+                          }`}
                       >
                         <button
                           onClick={() => setSelectedFloorId(floor.id)}
@@ -2711,11 +2820,10 @@ advanced:
                             e.stopPropagation();
                             setEditingFloor(floor);
                           }}
-                          className={`p-1 rounded-lg transition-opacity ${
-                            isSelected
-                              ? 'text-slate-950/70 hover:text-slate-950'
-                              : 'text-slate-500 hover:text-white'
-                          }`}
+                          className={`p-1 rounded-lg transition-opacity ${isSelected
+                            ? 'text-slate-950/70 hover:text-slate-950'
+                            : 'text-slate-500 hover:text-white'
+                            }`}
                           title="Edit Floor"
                         >
                           <Edit className="w-3.5 h-3.5" />
@@ -2726,11 +2834,10 @@ advanced:
                               e.stopPropagation();
                               handleDeleteFloor(floor.id);
                             }}
-                            className={`p-1 rounded-lg transition-opacity ${
-                              isSelected
-                                ? 'text-slate-950/70 hover:text-rose-950'
-                                : 'text-slate-500 hover:text-rose-400'
-                            }`}
+                            className={`p-1 rounded-lg transition-opacity ${isSelected
+                              ? 'text-slate-950/70 hover:text-rose-950'
+                              : 'text-slate-500 hover:text-rose-400'
+                              }`}
                             title="Delete Floor"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -2847,11 +2954,10 @@ advanced:
                         <div
                           key={room.id}
                           onClick={() => setSelectedRoomId(room.id)}
-                          className={`p-4 rounded-2xl cursor-pointer border transition-all ${
-                            isSelected
-                              ? 'glass-panel-glow border-cyan-500/60 shadow-glow bg-cyan-500/10'
-                              : 'glass-panel border-white/10 hover:border-white/20'
-                          }`}
+                          className={`p-4 rounded-2xl cursor-pointer border transition-all ${isSelected
+                            ? 'glass-panel-glow border-cyan-500/60 shadow-glow bg-cyan-500/10'
+                            : 'glass-panel border-white/10 hover:border-white/20'
+                            }`}
                         >
                           <div className="flex items-center justify-between mb-1.5">
                             <span className="font-bold text-sm text-white truncate pr-2">{room.name}</span>
@@ -2883,11 +2989,21 @@ advanced:
                             <span className="font-mono text-cyan-400">
                               {devCount} {devCount === 1 ? 'device' : 'devices'} mapped
                             </span>
-                            {room.is_meeting_room === 1 && (
-                              <span className="px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-300 border border-brand-500/30 font-medium text-[10px]">
-                                Meeting Room
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1.5">
+                              {room.wallpaper_url && (
+                                <span
+                                  className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-medium text-[10px] inline-flex items-center gap-1"
+                                  title="Custom wallpaper set"
+                                >
+                                  <ImageIcon className="w-2.5 h-2.5" /> Photo
+                                </span>
+                              )}
+                              {room.is_meeting_room === 1 && (
+                                <span className="px-1.5 py-0.5 rounded bg-brand-500/20 text-brand-300 border border-brand-500/30 font-medium text-[10px]">
+                                  Meeting Room
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
@@ -2951,11 +3067,10 @@ advanced:
                             <button
                               type="button"
                               onClick={() => toggleFavorite(dev.id)}
-                              className={`p-1.5 rounded-lg transition-colors ${
-                                isFavorite(dev.id)
-                                  ? 'bg-amber-500/20 text-[#F0B94D] border border-amber-500/40'
-                                  : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
-                              }`}
+                              className={`p-1.5 rounded-lg transition-colors ${isFavorite(dev.id)
+                                ? 'bg-amber-500/20 text-[#F0B94D] border border-amber-500/40'
+                                : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                                }`}
                               title={isFavorite(dev.id) ? 'Favorited (Click to remove from Favorites)' : 'Add to Favorites'}
                             >
                               <Star className={`w-3.5 h-3.5 ${isFavorite(dev.id) ? 'fill-current' : ''}`} />
@@ -3147,11 +3262,10 @@ advanced:
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => setShowTtlockGuide(!showTtlockGuide)}
-                    className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all ${
-                      showTtlockGuide
-                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-white/10'
-                    }`}
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-all ${showTtlockGuide
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-white/10'
+                      }`}
                   >
                     <HelpCircle className="w-4 h-4" />
                     Setup Guide
@@ -3228,11 +3342,10 @@ advanced:
                     </span>
                   </div>
                   <span
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${
-                      data?.config?.ttlock_authenticated || ttlockResult?.ok
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-glow-emerald'
-                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                    }`}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase ${data?.config?.ttlock_authenticated || ttlockResult?.ok
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shadow-glow-emerald'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      }`}
                   >
                     {data?.config?.ttlock_authenticated || ttlockResult?.ok ? 'AUTHENTICATED' : 'NOT LINKED'}
                   </span>
@@ -3459,11 +3572,10 @@ advanced:
                               </div>
 
                               <span
-                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                                  hasGateway
-                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                }`}
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${hasGateway
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                  }`}
                               >
                                 {hasGateway ? 'G2 GATEWAY ONLINE' : 'BLUETOOTH ONLY'}
                               </span>
@@ -3472,22 +3584,20 @@ advanced:
                             <div className="flex items-center gap-3 mt-3">
                               <div className="flex items-center gap-1.5 text-xs font-mono">
                                 <Battery
-                                  className={`w-4 h-4 ${
-                                    batteryLevel > 50
-                                      ? 'text-emerald-400'
-                                      : batteryLevel > 20
+                                  className={`w-4 h-4 ${batteryLevel > 50
+                                    ? 'text-emerald-400'
+                                    : batteryLevel > 20
                                       ? 'text-amber-400'
                                       : 'text-rose-400'
-                                  }`}
+                                    }`}
                                 />
                                 <span
-                                  className={`font-bold ${
-                                    batteryLevel > 50
-                                      ? 'text-emerald-400'
-                                      : batteryLevel > 20
+                                  className={`font-bold ${batteryLevel > 50
+                                    ? 'text-emerald-400'
+                                    : batteryLevel > 20
                                       ? 'text-amber-400'
                                       : 'text-rose-400'
-                                  }`}
+                                    }`}
                                 >
                                   {batteryLevel}% Battery
                                 </span>
@@ -3522,11 +3632,10 @@ advanced:
                           {unlockResults[String(lk.lockId)] && (
                             <div className="mt-2 space-y-2">
                               <div
-                                className={`p-2.5 rounded-xl text-xs font-mono flex items-center justify-between border ${
-                                  unlockResults[String(lk.lockId)].ok
-                                    ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
-                                    : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
-                                }`}
+                                className={`p-2.5 rounded-xl text-xs font-mono flex items-center justify-between border ${unlockResults[String(lk.lockId)].ok
+                                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                                  : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                                  }`}
                               >
                                 <span>{unlockResults[String(lk.lockId)].message}</span>
                                 <button
@@ -3592,9 +3701,8 @@ advanced:
                                   <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
                                     {roomName}
                                   </span>
-                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase ${
-                                    isTuyaLock ? 'bg-amber-950/70 text-amber-400 border border-amber-800/40' : 'bg-cyan-950/70 text-cyan-400 border border-cyan-800/40'
-                                  }`}>
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase ${isTuyaLock ? 'bg-amber-950/70 text-amber-400 border border-amber-800/40' : 'bg-cyan-950/70 text-cyan-400 border border-cyan-800/40'
+                                    }`}>
                                     {isTuyaLock ? 'Tuya Lock' : 'TTLock'}
                                   </span>
                                 </h5>
@@ -3605,11 +3713,10 @@ advanced:
                               </div>
 
                               <span
-                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                                  hasValidLockId
-                                    ? isTuyaLock ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                }`}
+                                className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${hasValidLockId
+                                  ? isTuyaLock ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                  }`}
                               >
                                 {hasValidLockId ? (isTuyaLock ? 'TUYA CLOUD' : 'ACTIVE IN ROOM') : 'MISSING LOCK ID'}
                               </span>
@@ -3657,11 +3764,10 @@ advanced:
                           {lockId && unlockResults[lockId] && (
                             <div className="mt-2 space-y-2">
                               <div
-                                className={`p-2.5 rounded-xl text-xs font-mono flex items-center justify-between border ${
-                                  unlockResults[lockId].ok
-                                    ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
-                                    : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
-                                }`}
+                                className={`p-2.5 rounded-xl text-xs font-mono flex items-center justify-between border ${unlockResults[lockId].ok
+                                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                                  : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                                  }`}
                               >
                                 <span>{unlockResults[lockId].message}</span>
                                 <button
@@ -3946,11 +4052,10 @@ advanced:
                       <button
                         type="button"
                         onClick={() => setAutoTriggerType('time')}
-                        className={`p-3 rounded-xl border text-left transition-all ${
-                          autoTriggerType === 'time'
-                            ? 'bg-cyan-500/20 border-cyan-500 text-white font-bold shadow-glow'
-                            : 'bg-slate-950/40 border-white/10 text-slate-400 hover:text-white'
-                        }`}
+                        className={`p-3 rounded-xl border text-left transition-all ${autoTriggerType === 'time'
+                          ? 'bg-cyan-500/20 border-cyan-500 text-white font-bold shadow-glow'
+                          : 'bg-slate-950/40 border-white/10 text-slate-400 hover:text-white'
+                          }`}
                       >
                         <div className="flex items-center gap-2 text-xs font-bold mb-1">
                           <Clock className="w-4 h-4 text-cyan-400" /> Scheduled Time
@@ -3963,11 +4068,10 @@ advanced:
                       <button
                         type="button"
                         onClick={() => setAutoTriggerType('cyclic')}
-                        className={`p-3 rounded-xl border text-left transition-all ${
-                          autoTriggerType === 'cyclic'
-                            ? 'bg-amber-400/20 border-amber-400 text-white font-bold shadow-glow ring-1 ring-amber-400/40'
-                            : 'bg-slate-950/40 border-white/10 text-slate-400 hover:text-white'
-                        }`}
+                        className={`p-3 rounded-xl border text-left transition-all ${autoTriggerType === 'cyclic'
+                          ? 'bg-amber-400/20 border-amber-400 text-white font-bold shadow-glow ring-1 ring-amber-400/40'
+                          : 'bg-slate-950/40 border-white/10 text-slate-400 hover:text-white'
+                          }`}
                       >
                         <div className="flex items-center gap-2 text-xs font-bold mb-1">
                           <RotateCcw className="w-4 h-4 text-amber-400" /> Cyclic Auto-Cutoff
@@ -3980,11 +4084,10 @@ advanced:
                       <button
                         type="button"
                         onClick={() => setAutoTriggerType('presence')}
-                        className={`p-3 rounded-xl border text-left transition-all ${
-                          autoTriggerType === 'presence'
-                            ? 'bg-cyan-500/20 border-cyan-500 text-white font-bold shadow-glow'
-                            : 'bg-slate-950/40 border-white/10 text-slate-400 hover:text-white'
-                        }`}
+                        className={`p-3 rounded-xl border text-left transition-all ${autoTriggerType === 'presence'
+                          ? 'bg-cyan-500/20 border-cyan-500 text-white font-bold shadow-glow'
+                          : 'bg-slate-950/40 border-white/10 text-slate-400 hover:text-white'
+                          }`}
                       >
                         <div className="flex items-center gap-2 text-xs font-bold mb-1">
                           <Radio className="w-4 h-4 text-emerald-400" /> Occupancy / Sensor
@@ -3997,11 +4100,10 @@ advanced:
                       <button
                         type="button"
                         onClick={() => setAutoTriggerType('manual')}
-                        className={`p-3 rounded-xl border text-left transition-all ${
-                          autoTriggerType === 'manual'
-                            ? 'bg-cyan-500/20 border-cyan-500 text-white font-bold shadow-glow'
-                            : 'bg-slate-950/40 border-white/10 text-slate-400 hover:text-white'
-                        }`}
+                        className={`p-3 rounded-xl border text-left transition-all ${autoTriggerType === 'manual'
+                          ? 'bg-cyan-500/20 border-cyan-500 text-white font-bold shadow-glow'
+                          : 'bg-slate-950/40 border-white/10 text-slate-400 hover:text-white'
+                          }`}
                       >
                         <div className="flex items-center gap-2 text-xs font-bold mb-1">
                           <Wand2 className="w-4 h-4 text-indigo-400" /> Manual Scene Only
@@ -4077,11 +4179,10 @@ advanced:
                                   key={preset.mins}
                                   type="button"
                                   onClick={() => setCyclicOnMinutes(preset.mins)}
-                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
-                                    cyclicOnMinutes === preset.mins
-                                      ? 'bg-amber-400 text-slate-950 font-bold shadow-sm'
-                                      : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
-                                  }`}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${cyclicOnMinutes === preset.mins
+                                    ? 'bg-amber-400 text-slate-950 font-bold shadow-sm'
+                                    : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
+                                    }`}
                                 >
                                   {preset.label}
                                 </button>
@@ -4121,11 +4222,10 @@ advanced:
                                   key={preset.mins}
                                   type="button"
                                   onClick={() => setCyclicOffMinutes(preset.mins)}
-                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
-                                    cyclicOffMinutes === preset.mins
-                                      ? 'bg-cyan-400 text-slate-950 font-bold shadow-sm'
-                                      : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
-                                  }`}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${cyclicOffMinutes === preset.mins
+                                    ? 'bg-cyan-400 text-slate-950 font-bold shadow-sm'
+                                    : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
+                                    }`}
                                 >
                                   {preset.label}
                                 </button>
@@ -4137,26 +4237,26 @@ advanced:
                         {/* AC Resume Temperature */}
                         {((data?.devices || []).find((d) => d.id === cyclicDeviceId)?.type === 'ac_ir' ||
                           (data?.devices || []).find((d) => d.id === cyclicDeviceId)?.type === 'climate') && (
-                          <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/5 flex items-center justify-between gap-4">
-                            <div>
-                              <label className="text-xs font-bold text-white block">AC Resume Temperature</label>
-                              <span className="text-[11px] text-slate-400">Target temperature when AC turns back ON after rest</span>
+                            <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/5 flex items-center justify-between gap-4">
+                              <div>
+                                <label className="text-xs font-bold text-white block">AC Resume Temperature</label>
+                                <span className="text-[11px] text-slate-400">Target temperature when AC turns back ON after rest</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <input
+                                  type="range"
+                                  min="18"
+                                  max="28"
+                                  value={cyclicResumeTemp}
+                                  onChange={(e) => setCyclicResumeTemp(Number(e.target.value))}
+                                  className="w-28 accent-cyan-400 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+                                />
+                                <span className="font-mono text-xs font-bold text-cyan-400 w-12 text-right">
+                                  {cyclicResumeTemp}°C
+                                </span>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-3">
-                              <input
-                                type="range"
-                                min="18"
-                                max="28"
-                                value={cyclicResumeTemp}
-                                onChange={(e) => setCyclicResumeTemp(Number(e.target.value))}
-                                className="w-28 accent-cyan-400 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
-                              />
-                              <span className="font-mono text-xs font-bold text-cyan-400 w-12 text-right">
-                                {cyclicResumeTemp}°C
-                              </span>
-                            </div>
-                          </div>
-                        )}
+                          )}
 
                         {/* Operating Window: All Day vs Specific Hours */}
                         <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/5 space-y-3">
@@ -4166,18 +4266,16 @@ advanced:
                               <button
                                 type="button"
                                 onClick={() => setCyclicAllDay(true)}
-                                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                                  cyclicAllDay ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white bg-slate-900'
-                                }`}
+                                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${cyclicAllDay ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white bg-slate-900'
+                                  }`}
                               >
                                 All Day (24/7)
                               </button>
                               <button
                                 type="button"
                                 onClick={() => setCyclicAllDay(false)}
-                                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                                  !cyclicAllDay ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white bg-slate-900'
-                                }`}
+                                className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${!cyclicAllDay ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-white bg-slate-900'
+                                  }`}
                               >
                                 Custom Hours
                               </button>
@@ -4231,9 +4329,8 @@ advanced:
                                             setCyclicDays([...cyclicDays, d.day].sort());
                                           }
                                         }}
-                                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                                          isSelected ? 'bg-cyan-500 text-slate-950 font-bold' : 'bg-slate-800 text-slate-400 hover:text-white'
-                                        }`}
+                                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${isSelected ? 'bg-cyan-500 text-slate-950 font-bold' : 'bg-slate-800 text-slate-400 hover:text-white'
+                                          }`}
                                       >
                                         {d.label}
                                       </button>
@@ -4289,11 +4386,10 @@ advanced:
                                       setAutoTriggerDays([...autoTriggerDays, d.day].sort());
                                     }
                                   }}
-                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                                    isSelected
-                                      ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
-                                      : 'bg-slate-800 text-slate-400 hover:text-white'
-                                  }`}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${isSelected
+                                    ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
+                                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                                    }`}
                                 >
                                   {d.label}
                                 </button>
@@ -4497,12 +4593,12 @@ advanced:
                 ) : (
                   (data?.automations || []).map((auto) => {
                     let tr: any = {};
-                    try { tr = JSON.parse(auto.trigger_json || '{}'); } catch (_) {}
+                    try { tr = JSON.parse(auto.trigger_json || '{}'); } catch (_) { }
                     let stepCount = 0;
                     try {
                       const st = JSON.parse(auto.steps_json || auto.actions_json || '[]');
                       stepCount = Array.isArray(st) ? st.length : 0;
-                    } catch (_) {}
+                    } catch (_) { }
 
                     const isRunning = runningAutoId === auto.id;
 
@@ -4515,11 +4611,10 @@ advanced:
                           <div className="flex items-center gap-2.5">
                             <h4 className="font-bold text-white text-sm">{auto.name}</h4>
                             <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                                auto.enabled
-                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                  : 'bg-slate-800 text-slate-500 border border-white/5'
-                              }`}
+                              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${auto.enabled
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-slate-800 text-slate-500 border border-white/5'
+                                }`}
                             >
                               {auto.enabled ? 'ACTIVE' : 'DISABLED'}
                             </span>
@@ -4552,7 +4647,7 @@ advanced:
                                 let tracking: any = null;
                                 try {
                                   if (auto.last_trigger_state_key) tracking = JSON.parse(auto.last_trigger_state_key);
-                                } catch (_) {}
+                                } catch (_) { }
 
                                 return (
                                   <>
@@ -4616,11 +4711,10 @@ advanced:
                           <button
                             onClick={() => handleToggleAutomation(auto)}
                             title={auto.enabled ? 'Disable automation' : 'Enable automation'}
-                            className={`p-2 rounded-lg transition-colors ${
-                              auto.enabled
-                                ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
-                                : 'bg-slate-800 text-slate-400 hover:text-white'
-                            }`}
+                            className={`p-2 rounded-lg transition-colors ${auto.enabled
+                              ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
+                              : 'bg-slate-800 text-slate-400 hover:text-white'
+                              }`}
                           >
                             {auto.enabled ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
                           </button>
@@ -4645,6 +4739,95 @@ advanced:
                     );
                   })
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB: Quick Controls Customization */}
+          {activeTab === 'quick_controls' && (
+            <div className="space-y-6">
+              <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                      <Sliders className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-white">Dashboard Quick Controls</h3>
+                      <p className="text-xs text-slate-400">
+                        Customize quick control cards, reorder dashboard tiles, and assign ACs, lights, fans, or plugs
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuickEditTargetId(null);
+                      setQuickEditOpen(true);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-400 to-brand-500 text-slate-950 font-bold text-xs shadow-glow flex items-center gap-1.5 self-start sm:self-auto"
+                  >
+                    <Edit className="w-3.5 h-3.5" /> Customize All Cards
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+                  {parseQuickControls(data?.config?.quick_controls_json).map((qc) => {
+                    const IconComp = QUICK_CONTROL_ICON_MAP[qc.icon] || Power;
+                    const assigned = getDevicesForQuickControl(qc, data?.devices || []);
+                    return (
+                      <div
+                        key={qc.id}
+                        className={`p-4 rounded-xl bg-slate-900/60 border border-white/10 hover:border-cyan-500/40 transition-all flex flex-col justify-between gap-3 ${!qc.enabled ? 'opacity-50' : ''
+                          }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-9 h-9 rounded-lg bg-slate-950 border border-white/10 flex items-center justify-center text-cyan-400 shrink-0">
+                              <IconComp className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <h5 className="font-bold text-xs text-white truncate">{qc.label}</h5>
+                              <span className="text-[10px] font-mono text-slate-400 block truncate">
+                                {qc.subtitle}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase border ${qc.enabled
+                                ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                : 'bg-slate-800 text-slate-500 border-white/10'
+                                }`}
+                            >
+                              {qc.enabled ? 'Visible' : 'Hidden'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQuickEditTargetId(qc.id);
+                                setQuickEditOpen(true);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-slate-300 hover:text-cyan-300 border border-white/10 text-[11px] font-semibold flex items-center gap-1 transition-all"
+                            >
+                              <Edit className="w-3 h-3" /> Edit
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
+                          <span className="text-slate-400 font-mono">
+                            {qc.device_ids.length > 0 ? 'Manual assignment' : 'Auto-detect by role'}
+                          </span>
+                          <span className="text-cyan-400 font-mono font-bold">
+                            {assigned.length} {assigned.length === 1 ? 'device' : 'devices'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
@@ -4744,12 +4927,243 @@ advanced:
                 </label>
               </div>
 
+              <div className="pt-2 border-t border-white/10 space-y-2">
+                <label className="block text-xs font-semibold text-slate-300">Building Interface Theme</label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={savingTheme}
+                    onClick={() => handleSelectUiTheme('default')}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-2 ${uiTheme === 'default'
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
+                      : 'bg-slate-900/60 text-slate-300 border-white/10 hover:border-white/25'
+                      }`}
+                  >
+                    {uiTheme === 'default' && <Check className="w-3.5 h-3.5" />}
+                    <span>Obsidian Dark (Present)</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingTheme}
+                    onClick={() => handleSelectUiTheme('crystal_glass')}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-2 ${uiTheme === 'crystal_glass'
+                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
+                      : 'bg-slate-900/60 text-slate-300 border-white/10 hover:border-white/25'
+                      }`}
+                  >
+                    {uiTheme === 'crystal_glass' && <Check className="w-3.5 h-3.5" />}
+                    <span>Silver Crystal Glass</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="pt-4 flex justify-end">
                 <button
                   onClick={handleSaveSettings}
                   className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 to-brand-500 text-slate-950 font-bold text-xs shadow-glow"
                 >
                   Save Changes
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: Theme & Appearance */}
+          {activeTab === 'theme' && (
+            <div className="space-y-6 animate-in fade-in">
+              <div className="glass-panel p-6 rounded-2xl border border-white/10 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Palette className="w-5 h-5 text-cyan-400" />
+                    UI Theme & Appearance
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Switch the visual theme across Dashboard, Rooms, CCTV, Scenes, and Admin Studio. Syncs live across all panels.
+                  </p>
+                </div>
+                <span className="px-3 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-mono font-semibold">
+                  {savingTheme
+                    ? 'Applying Theme...'
+                    : uiTheme === 'crystal_glass'
+                      ? 'Active: Silver Crystal Glass'
+                      : 'Active: Obsidian Dark (Present)'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl">
+                {/* Option 1: Obsidian Dark (Present Theme) */}
+                <button
+                  type="button"
+                  disabled={savingTheme}
+                  onClick={() => handleSelectUiTheme('default')}
+                  className={`text-left glass-panel rounded-2xl p-5 border transition-all space-y-4 ${uiTheme === 'default'
+                    ? 'border-cyan-400/70 ring-1 ring-cyan-400/40 shadow-[0_0_24px_rgba(34,211,238,0.16)]'
+                    : 'border-white/10 hover:border-white/30'
+                    }`}
+                >
+                  {/* Visual Preview */}
+                  <div
+                    className="relative h-40 rounded-xl overflow-hidden border p-3 flex gap-2.5"
+                    style={{ backgroundColor: '#090A0C', borderColor: '#383A3E' }}
+                  >
+                    <div
+                      className="w-14 h-full rounded-lg border p-2 space-y-1.5 shrink-0"
+                      style={{ backgroundColor: '#111214', borderColor: '#383A3E' }}
+                    >
+                      <div className="h-2.5 w-9 rounded" style={{ backgroundColor: 'rgba(255,255,255,0.8)' }} />
+                      <div className="h-2 w-10 rounded" style={{ backgroundColor: '#202226' }} />
+                      <div className="h-2 w-8 rounded" style={{ backgroundColor: '#202226' }} />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-2">
+                      <div
+                        className="h-7 rounded-lg border px-2.5 flex items-center justify-between"
+                        style={{ backgroundColor: '#111214', borderColor: '#383A3E' }}
+                      >
+                        <div className="h-2 w-14 rounded" style={{ backgroundColor: 'rgba(245,245,245,0.7)' }} />
+                        <div className="w-2 h-2 rounded-full bg-[#22D68A]" />
+                      </div>
+                      <div className="flex-1 grid grid-cols-3 gap-2">
+                        <div
+                          className="rounded-lg p-2 flex flex-col justify-between"
+                          style={{ backgroundColor: '#FFFFFF' }}
+                        >
+                          <div className="w-3 h-3 rounded" style={{ backgroundColor: 'rgba(9,10,12,0.15)' }} />
+                          <div className="h-2 w-8 rounded" style={{ backgroundColor: 'rgba(9,10,12,0.7)' }} />
+                        </div>
+                        <div
+                          className="rounded-lg border p-2 flex flex-col justify-between"
+                          style={{ backgroundColor: '#191A1D', borderColor: '#383A3E' }}
+                        >
+                          <div className="w-3 h-3 rounded" style={{ backgroundColor: '#202226' }} />
+                          <div className="h-2 w-9 rounded" style={{ backgroundColor: 'rgba(245,245,245,0.5)' }} />
+                        </div>
+                        <div
+                          className="rounded-lg border p-2 flex flex-col justify-between"
+                          style={{ backgroundColor: '#191A1D', borderColor: '#383A3E' }}
+                        >
+                          <div className="w-3 h-3 rounded" style={{ backgroundColor: '#202226' }} />
+                          <div className="h-2 w-8 rounded" style={{ backgroundColor: 'rgba(245,245,245,0.5)' }} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Obsidian Dark (Present)</h4>
+                      <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                        Original high-contrast matte obsidian surfaces with crisp charcoal borders.
+                      </p>
+                    </div>
+                    <span
+                      className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold border flex items-center gap-1 ${uiTheme === 'default'
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                        : 'bg-slate-800/70 text-slate-300 border-white/10'
+                        }`}
+                    >
+                      {uiTheme === 'default' ? (
+                        <>
+                          <Check className="w-3 h-3" /> Active
+                        </>
+                      ) : (
+                        'Select'
+                      )}
+                    </span>
+                  </div>
+                </button>
+
+                {/* Option 2: Silver Crystal Liquid Glass (Matches photo aesthetic) */}
+                <button
+                  type="button"
+                  disabled={savingTheme}
+                  onClick={() => handleSelectUiTheme('crystal_glass')}
+                  className={`text-left glass-panel rounded-2xl p-5 border transition-all space-y-4 ${uiTheme === 'crystal_glass'
+                    ? 'border-cyan-400/70 ring-1 ring-cyan-400/40 shadow-[0_0_24px_rgba(34,211,238,0.16)]'
+                    : 'border-white/10 hover:border-white/30'
+                    }`}
+                >
+                  {/* Visual Preview — iOS Water Crystal Drop glassmorphism */}
+                  <div
+                    className="relative h-40 rounded-2xl overflow-hidden p-3 flex flex-col justify-between"
+                    style={{
+                      background: 'linear-gradient(135deg, #dce8f8 0%, #e8dff8 45%, #d8f0ef 100%)',
+                      border: '1px solid rgba(255,255,255,0.7)',
+                    }}
+                  >
+                    {/* Navbar — frosted glass slab */}
+                    <div
+                      className="h-6 rounded-full px-3 flex items-center justify-between"
+                      style={{
+                        background: 'linear-gradient(180deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.22) 100%)',
+                        backdropFilter: 'blur(20px)',
+                        border: '1px solid rgba(255,255,255,0.90)',
+                        borderTopColor: '#ffffff',
+                        boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,0.98), 0 6px 16px rgba(100,120,200,0.18)',
+                      }}
+                    >
+                      <div className="h-1.5 w-14 rounded-full" style={{ background: 'rgba(30,41,59,0.55)' }} />
+                      <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                    </div>
+
+                    {/* Central water-crystal pill card */}
+                    <div
+                      className="mx-auto w-[84%] h-14 rounded-full flex items-center justify-center px-4"
+                      style={{
+                        background: 'radial-gradient(ellipse 90% 55% at 50% 0%, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0.14) 55%, transparent 100%), linear-gradient(160deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.12) 100%)',
+                        backdropFilter: 'blur(24px) saturate(190%)',
+                        border: '1px solid rgba(255,255,255,0.72)',
+                        borderTopColor: 'rgba(255,255,255,0.98)',
+                        boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,0.98), 0 18px 40px -6px rgba(80,100,200,0.22), 0 8px 18px -4px rgba(80,100,200,0.14)',
+                      }}
+                    >
+                      <span style={{ fontSize: 11, fontWeight: 800, color: '#0f1923', letterSpacing: '-0.3px' }}>
+                        Glass<span style={{ fontWeight: 400 }}>Morphism</span>
+                      </span>
+                    </div>
+
+                    {/* Bottom glass droplet cards */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {[0, 1].map((i) => (
+                        <div
+                          key={i}
+                          className="h-8 rounded-2xl px-2.5 flex items-center justify-between"
+                          style={{
+                            background: 'radial-gradient(ellipse 90% 55% at 50% 0%, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.10) 60%, transparent 100%), linear-gradient(160deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.08) 100%)',
+                            backdropFilter: 'blur(20px) saturate(170%)',
+                            border: '1px solid rgba(255,255,255,0.68)',
+                            borderTopColor: 'rgba(255,255,255,0.95)',
+                            boxShadow: 'inset 0 1.5px 0 rgba(255,255,255,0.98), 0 10px 24px -4px rgba(80,100,200,0.18)',
+                          }}
+                        >
+                          <div className="h-1.5 w-10 rounded" style={{ background: 'rgba(30,41,59,0.45)' }} />
+                          <div className="w-2 h-2 rounded-full" style={{ background: i === 1 ? '#10b981' : 'rgba(30,41,59,0.30)' }} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Silver Crystal Glass</h4>
+                      <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                        iPhone-style frosted glass droplets — translucent blur cards floating on a pastel gradient canvas.
+                      </p>
+                    </div>
+                    <span
+                      className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold border flex items-center gap-1 ${uiTheme === 'crystal_glass'
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                        : 'bg-slate-800/70 text-slate-300 border-white/10'
+                        }`}
+                    >
+                      {uiTheme === 'crystal_glass' ? (
+                        <>
+                          <Check className="w-3 h-3" /> Active
+                        </>
+                      ) : (
+                        'Select'
+                      )}
+                    </span>
+                  </div>
                 </button>
               </div>
             </div>
@@ -4885,7 +5299,7 @@ advanced:
       {/* Room Modal */}
       {editingRoom && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-md glass-panel rounded-2xl border border-white/20 p-6 shadow-2xl space-y-4">
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto glass-panel rounded-2xl border border-white/20 p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2">
                 <Briefcase className="w-5 h-5 text-cyan-400" />
@@ -5026,8 +5440,100 @@ advanced:
                   className="rounded bg-slate-800 border-white/20 text-cyan-400 focus:ring-cyan-500"
                 />
                 <label htmlFor="isMeetingRoom" className="text-xs text-slate-300 font-medium cursor-pointer">
-                  Conference / Meeting Room (Enables room booking & calendar displays)
+                  Conference / Meeting Room (Enables room booking &amp; calendar displays)
                 </label>
+              </div>
+
+              {/* Room Background Photo / Wallpaper Customization */}
+              <div className="bg-slate-900/60 p-3.5 rounded-xl border border-white/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-semibold text-cyan-300 flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-cyan-400" /> Room Background Photo / Wallpaper
+                    </label>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Optional photo of this physical room. If not set, keeps the default theme.
+                    </p>
+                  </div>
+                  {editingRoom.wallpaper_url && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingRoom({ ...editingRoom, wallpaper_url: '' })}
+                      className="text-[11px] font-semibold text-rose-400 hover:text-rose-300 px-2 py-1 rounded-lg bg-rose-500/10 border border-rose-500/20"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+
+                {/* Live Wallpaper Preview */}
+                {editingRoom.wallpaper_url ? (
+                  <div className="relative h-28 w-full rounded-xl overflow-hidden border border-white/15 bg-slate-950">
+                    <img
+                      src={editingRoom.wallpaper_url}
+                      alt="Room wallpaper preview"
+                      className="w-full h-full object-cover opacity-75"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#090A0C]/90 via-[#090A0C]/30 to-transparent" />
+                    <div className="absolute bottom-2 left-3 text-xs font-bold text-white drop-shadow">
+                      {editingRoom.name || 'Room Preview'}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-16 rounded-xl border border-dashed border-white/10 bg-slate-950/60 flex items-center justify-center text-[11px] text-slate-500">
+                    No custom photo — uses default UI background
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all">
+                    {uploadingWallpaper ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="w-3.5 h-3.5" />
+                    )}
+                    <span>{uploadingWallpaper ? 'Uploading...' : 'Upload Room Photo'}</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      onChange={handleRoomWallpaperUpload}
+                      disabled={uploadingWallpaper}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {editingRoom.id && (data?.cameras || []).some((c) => c.room_id === editingRoom.id) && (
+                    <button
+                      type="button"
+                      onClick={handleCaptureCameraWallpaper}
+                      disabled={uploadingWallpaper}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-all disabled:opacity-50"
+                    >
+                      <CameraIcon className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Capture Room Camera</span>
+                    </button>
+                  )}
+
+                  {editingRoom.wallpaper_url && (
+                    <button
+                      type="button"
+                      onClick={() => setCropSourceUrl(editingRoom.wallpaper_url || '')}
+                      disabled={uploadingWallpaper}
+                      className="px-3 py-1.5 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-semibold flex items-center gap-1.5 transition-all disabled:opacity-50"
+                    >
+                      <Crop className="w-3.5 h-3.5" />
+                      <span>Adjust / Crop</span>
+                    </button>
+                  )}
+                </div>
+
+                <input
+                  type="text"
+                  placeholder="Or paste photo URL (e.g. /api/wallpapers/... or https://...)"
+                  value={editingRoom.wallpaper_url || ''}
+                  onChange={(e) => setEditingRoom({ ...editingRoom, wallpaper_url: e.target.value })}
+                  className="w-full glass-input rounded-xl px-3 py-1.5 text-[11px] font-mono text-slate-300"
+                />
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
@@ -5595,11 +6101,10 @@ advanced:
                     <button
                       key={cat}
                       onClick={() => setEntityFilter(cat)}
-                      className={`px-3 py-1 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all ${
-                        entityFilter === cat
-                          ? 'bg-cyan-500 text-slate-950 shadow-glow'
-                          : 'bg-slate-900 text-slate-400 hover:text-white'
-                      }`}
+                      className={`px-3 py-1 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all ${entityFilter === cat
+                        ? 'bg-cyan-500 text-slate-950 shadow-glow'
+                        : 'bg-slate-900 text-slate-400 hover:text-white'
+                        }`}
                     >
                       {cat} ({count})
                     </button>
@@ -5718,6 +6223,23 @@ advanced:
         isOpen={!!editingAdminPreset}
         preset={editingAdminPreset}
         onClose={() => setEditingAdminPreset(null)}
+      />
+
+      {/* Quick Controls Customization Modal (Admin Studio Only) */}
+      <QuickControlsEditModal
+        isOpen={quickEditOpen}
+        initialControlId={quickEditTargetId}
+        onClose={() => setQuickEditOpen(false)}
+        onOpenAdminDevices={() => setActiveTab('floors')}
+      />
+
+      {/* Room Wallpaper Crop & Fit Modal */}
+      <RoomWallpaperCropModal
+        isOpen={Boolean(cropSourceUrl && editingRoom)}
+        imageSrc={cropSourceUrl}
+        roomName={editingRoom?.name}
+        onClose={() => setCropSourceUrl(null)}
+        onApply={handleApplyCroppedWallpaper}
       />
     </div>
   );

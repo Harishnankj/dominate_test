@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS building_config (
   tuya_endpoint TEXT DEFAULT 'https://openapi.tuyain.com',
   tuya_uid TEXT DEFAULT '',
   excluded_employee_ids_json TEXT DEFAULT '[]',
+  quick_controls_json TEXT DEFAULT '',
+  ui_theme TEXT DEFAULT 'default',
   updated_at TEXT
 );
 
@@ -96,6 +98,7 @@ CREATE TABLE IF NOT EXISTS rooms (
   icon TEXT DEFAULT 'Briefcase',
   accent_color TEXT DEFAULT 'primary-400',
   is_meeting_room INTEGER DEFAULT 0,
+  wallpaper_url TEXT DEFAULT '',
   sort_order INTEGER DEFAULT 0
 );
 

@@ -33,7 +33,23 @@ export interface BuildingConfig {
   tuya_endpoint?: string;
   tuya_uid?: string;
   excluded_employee_ids_json?: string;
+  quick_controls_json?: string;
+  ui_theme?: UiTheme;
   updated_at?: string;
+}
+
+export type UiTheme = 'default' | 'crystal_glass';
+
+export type QuickControlCategory = 'lights' | 'climate' | 'fans' | 'power' | 'curtains' | 'plugs' | 'custom';
+
+export interface QuickControlConfig {
+  id: string;
+  category: QuickControlCategory;
+  label: string;
+  subtitle: string;
+  icon: string;
+  enabled: boolean;
+  device_ids: string[]; // Empty array means auto-detect devices matching category
 }
 
 declare global {
@@ -85,6 +101,7 @@ export interface Room {
   icon: string;
   accent_color: string;
   is_meeting_room: number;
+  wallpaper_url?: string | null;
   sort_order: number;
 }
 

@@ -212,18 +212,18 @@ export const DynamicRoomPage: React.FC<DynamicRoomPageProps> = ({
     <div className="relative space-y-6 pb-24 animate-in fade-in">
       {/* Custom Room Background Wallpaper (rendered only when photo is set in Admin Studio) */}
       {customWallpaper && (
-        <div className="fixed inset-0 md:left-[260px] pointer-events-none z-0 overflow-hidden">
+        <div className="room-wallpaper-layer fixed inset-0 md:left-[260px] pointer-events-none z-0 overflow-hidden">
           <div
-            className="absolute inset-0 bg-cover bg-center scale-105 opacity-35 transition-all duration-500"
+            className="room-wallpaper-img absolute inset-0 bg-cover bg-center scale-105 opacity-35 transition-all duration-500"
             style={{ backgroundImage: `url("${customWallpaper}")` }}
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-[#090A0C]/60 via-[#090A0C]/75 to-[#090A0C]/95" />
+          <div className="room-wallpaper-scrim absolute inset-0 bg-gradient-to-b from-[#090A0C]/60 via-[#090A0C]/75 to-[#090A0C]/95" />
         </div>
       )}
 
       <div className="relative z-10 space-y-6">
         {/* Header Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="room-wallpaper-header flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}

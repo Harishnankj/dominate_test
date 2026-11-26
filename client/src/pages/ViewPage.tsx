@@ -113,11 +113,11 @@ export const ViewPage: React.FC<ViewPageProps> = ({
                   <img
                     src={bgImage}
                     alt={room.name}
-                    className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${
+                    className={`room-card-photo w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${
                       customWallpaper ? 'opacity-80' : 'opacity-60'
                     }`}
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#191A1D] via-[#191A1D]/40 to-transparent" />
+                  <div className="room-card-scrim absolute inset-0 bg-gradient-to-t from-[#191A1D] via-[#191A1D]/40 to-transparent" />
                   
                   {hasCamera && (
                     <div className="absolute top-3 left-3 z-10">

@@ -1273,7 +1273,7 @@ router.post('/config', (req, res) => {
       fields.quick_controls_json !== undefined
         ? (typeof fields.quick_controls_json === 'string' ? fields.quick_controls_json : JSON.stringify(fields.quick_controls_json))
         : null,
-      fields.ui_theme === 'crystal_glass' || fields.ui_theme === 'default'
+      fields.ui_theme === 'crystal_glass' || fields.ui_theme === 'glassmorphism_20' || fields.ui_theme === 'default'
         ? fields.ui_theme
         : fields.ui_theme === 'glassmorphism'
         ? 'default'

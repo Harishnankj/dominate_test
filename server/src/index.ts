@@ -21,7 +21,9 @@ import miscRouter from './routes/misc.js';
 import z2mRouter from './routes/z2m.js';
 import tuyaRouter from './routes/tuya.js';
 import presetsRouter from './routes/presets.js';
+import voiceRouter from './routes/voice.js';
 import { mqttService } from './services/mqttService.js';
+import { voiceSttService } from './services/voiceSttService.js';
 import { startHttpsGateway } from './httpsGateway.js';
 
 // 1. Initialize SQLite Database
@@ -53,6 +55,7 @@ app.use('/api/automations', automationsRouter);
 app.use('/api/presets', presetsRouter);
 app.use('/api/z2m', z2mRouter);
 app.use('/api/tuya', tuyaRouter);
+app.use('/api/voice', voiceRouter);
 app.use('/api', miscRouter);
 
 // 4. Serve Client static bundle in production if available
@@ -185,6 +188,9 @@ server.listen(PORT, () => {
   console.log(`[DOMINATEE SERVER] Running on port ${PORT}`);
   console.log(`[DOMINATEE SERVER] Live Sync WebSocket ready at /api/live-sync`);
   console.log(`[DOMINATEE SERVER] HA Proxy WebSocket ready at /ha-ws/:hubId`);
+
+  // Pre-warm local Whisper voice recognition model in background
+  voiceSttService.warmup();
 
   // Start HTTPS Gateway for mobile phones (port 5174 -> port 5173)
   startHttpsGateway(5174, 5173);

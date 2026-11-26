@@ -395,13 +395,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       <div className="relative rounded-3xl overflow-hidden border border-[#383A3E] bg-[#191A1D] shadow-card">
         {/* Subtle Architectural Photo Background */}
         <div
-          className="absolute inset-0 bg-cover bg-center opacity-25 mix-blend-luminosity"
+          className="hero-bg-photo absolute inset-0 bg-cover bg-center opacity-25 mix-blend-luminosity"
           style={{
             backgroundImage: `url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1600&q=80')`,
           }}
         />
         {/* Dark Gradient Overlay for Maximum Readability */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#191A1D] via-[#191A1D]/80 to-transparent" />
+        <div className="hero-bg-scrim absolute inset-0 bg-gradient-to-t from-[#191A1D] via-[#191A1D]/80 to-transparent" />
 
         <div className="relative z-10 p-6 md:p-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div className="space-y-1.5">
@@ -807,13 +807,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               >
                 {/* Background Photo */}
                 <div
-                  className={`absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-105 ${
+                  className={`room-card-photo absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-105 ${
                     customWallpaper ? 'opacity-70' : 'opacity-40 mix-blend-luminosity'
                   }`}
                   style={{ backgroundImage: `url("${customWallpaper || getRoomImage(room.name, idx)}")` }}
                 />
                 {/* Gradient */}
-                <div className="absolute inset-0 bg-gradient-to-t from-[#090A0C] via-[#090A0C]/60 to-transparent" />
+                <div className="room-card-scrim absolute inset-0 bg-gradient-to-t from-[#090A0C] via-[#090A0C]/60 to-transparent" />
 
                 <div className="relative z-10 flex items-center justify-between">
                   <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#111214]/80 border border-[#383A3E] text-[#A6A6A6]">

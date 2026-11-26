@@ -38,7 +38,7 @@ export interface BuildingConfig {
   updated_at?: string;
 }
 
-export type UiTheme = 'default' | 'crystal_glass';
+export type UiTheme = 'default' | 'crystal_glass' | 'glassmorphism_20';
 
 export type QuickControlCategory = 'lights' | 'climate' | 'fans' | 'power' | 'curtains' | 'plugs' | 'custom';
 

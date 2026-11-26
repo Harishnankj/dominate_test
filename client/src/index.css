@@ -516,33 +516,45 @@ video-rtc video {
   fill: #0f1923;
 }
 
-/* Room wallpaper gradient scrims — crisp white glass mist */
+/* Remove bottom white fog/glow on Theme 2 room wallpapers while softening card/hero contrast scrims */
+:root[data-theme="crystal_glass"] .room-wallpaper-scrim {
+  display: none !important;
+}
+:root[data-theme="crystal_glass"] .hero-bg-photo {
+  opacity: 0.16;
+  mix-blend-mode: normal;
+  filter: saturate(0.70) brightness(1.12);
+}
+:root[data-theme="crystal_glass"] .hero-bg-scrim {
+  background: linear-gradient(
+    110deg,
+    rgba(244, 248, 255, 0.62) 0%,
+    rgba(232, 241, 255, 0.36) 52%,
+    rgba(238, 243, 255, 0.48) 100%
+  ) !important;
+}
+:root[data-theme="crystal_glass"] .hero-bg-photo ~ .relative .bg-\[\#202226\]:not(:hover) {
+  background: rgba(255, 255, 255, 0.44);
+}
 :root[data-theme="crystal_glass"] .from-\[\#191A1D\] {
-  --tw-gradient-from: rgba(220, 232, 252, 0.90) var(--tw-gradient-from-position);
+  --tw-gradient-from: rgba(220, 232, 252, 0.35) var(--tw-gradient-from-position);
   --tw-gradient-to: rgba(220, 232, 252, 0) var(--tw-gradient-to-position);
 }
-:root[data-theme="crystal_glass"] .via-\[\#191A1D\]\/80 {
-  --tw-gradient-via: rgba(220, 232, 252, 0.65) var(--tw-gradient-via-position);
-}
-:root[data-theme="crystal_glass"] .via-\[\#191A1D\]\/40 {
-  --tw-gradient-via: rgba(220, 232, 252, 0.40) var(--tw-gradient-via-position);
-}
 :root[data-theme="crystal_glass"] .from-\[\#090A0C\] {
-  --tw-gradient-from: rgba(220, 235, 255, 0.92) var(--tw-gradient-from-position);
+  --tw-gradient-from: rgba(220, 235, 255, 0.35) var(--tw-gradient-from-position);
   --tw-gradient-to: rgba(220, 235, 255, 0) var(--tw-gradient-to-position);
 }
+:root[data-theme="crystal_glass"] .via-\[\#191A1D\]\/80 {
+  --tw-gradient-via: rgba(220, 232, 252, 0.22);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via) var(--tw-gradient-via-position), var(--tw-gradient-to);
+}
+:root[data-theme="crystal_glass"] .via-\[\#191A1D\]\/40 {
+  --tw-gradient-via: rgba(220, 232, 252, 0.15);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via) var(--tw-gradient-via-position), var(--tw-gradient-to);
+}
 :root[data-theme="crystal_glass"] .via-\[\#090A0C\]\/60 {
-  --tw-gradient-via: rgba(215, 230, 252, 0.60) var(--tw-gradient-via-position);
-}
-:root[data-theme="crystal_glass"] .from-\[\#090A0C\]\/60 {
-  --tw-gradient-from: rgba(210, 228, 252, 0.55) var(--tw-gradient-from-position);
-  --tw-gradient-to: rgba(210, 228, 252, 0) var(--tw-gradient-to-position);
-}
-:root[data-theme="crystal_glass"] .via-\[\#090A0C\]\/75 {
-  --tw-gradient-via: rgba(205, 225, 252, 0.70) var(--tw-gradient-via-position);
-}
-:root[data-theme="crystal_glass"] .to-\[\#090A0C\]\/95 {
-  --tw-gradient-to: rgba(200, 220, 250, 0.88) var(--tw-gradient-to-position);
+  --tw-gradient-via: rgba(215, 230, 252, 0.20);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-via) var(--tw-gradient-via-position), var(--tw-gradient-to);
 }
 
 /* Tile hover — card lifts, brightens specular */
@@ -566,4 +578,329 @@ video-rtc video {
 }
 :root[data-theme="crystal_glass"] ::-webkit-scrollbar-thumb:hover {
   background: rgba(100, 130, 200, 0.48);
+}
+
+/* ============================================================
+   GLASSMORPHISM 20% OPACITY (data-theme="glassmorphism_20")
+   Deep ambient aurora backdrop + crisp 20% opacity frosted
+   glass panels with real blur and luminous hairline borders.
+   ============================================================ */
+.glass-20-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 75% 55% at 12% 14%, rgba(56, 189, 248, 0.34) 0%, transparent 62%),
+    radial-gradient(ellipse 70% 55% at 88% 82%, rgba(139, 92, 246, 0.32) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 48% at 55% 42%, rgba(16, 185, 129, 0.20) 0%, transparent 58%),
+    linear-gradient(145deg, #060914 0%, #0b1224 45%, #091322 75%, #070b18 100%);
+}
+
+:root[data-theme="glassmorphism_20"] {
+  --bg-main: transparent;
+  --bg-sidebar: rgba(255, 255, 255, 0.08);
+  --card-surface: rgba(255, 255, 255, 0.06);
+  --card-surface-secondary: rgba(255, 255, 255, 0.08);
+  --card-border: rgba(255, 255, 255, 0.16);
+  --text-primary: #F8FAFC;
+  --text-secondary: #E2E8F0;
+  --text-muted: #CBD5E1;
+  --color-online: #22D68A;
+}
+
+:root[data-theme="glassmorphism_20"] body {
+  background: transparent;
+  color: #F8FAFC;
+}
+
+:root[data-theme="glassmorphism_20"] #root > .min-h-screen.bg-\[\#090A0C\] {
+  background: transparent !important;
+  color: #F8FAFC;
+}
+
+/* Studio / Admin canvas background - opaque mesh so dashboard behind does not overlap */
+:root[data-theme="glassmorphism_20"] .admin-studio-root,
+:root[data-theme="glassmorphism_20"] .bg-\[\#090d16\] {
+  background-color: #060914 !important;
+  background-image:
+    radial-gradient(ellipse 75% 55% at 12% 14%, rgba(56, 189, 248, 0.34) 0%, transparent 62%),
+    radial-gradient(ellipse 70% 55% at 88% 82%, rgba(139, 92, 246, 0.32) 0%, transparent 60%),
+    radial-gradient(ellipse 55% 48% at 55% 42%, rgba(16, 185, 129, 0.20) 0%, transparent 58%),
+    linear-gradient(145deg, #060914 0%, #0b1224 45%, #091322 75%, #070b18 100%) !important;
+  color: #F8FAFC;
+}
+
+/* Chrome: Sidebar, Navbar, Mobile Dock — low-opacity clear frosted glass */
+:root[data-theme="glassmorphism_20"] aside.w-\[260px\],
+:root[data-theme="glassmorphism_20"] header.bg-\[\#111214\],
+:root[data-theme="glassmorphism_20"] nav.fixed.bottom-0 {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px) saturate(145%);
+  -webkit-backdrop-filter: blur(14px) saturate(145%);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 8px 24px rgba(0, 0, 0, 0.22);
+}
+
+/* Active / highlighted pills & quick-control tiles — frosted luminous white */
+:root[data-theme="glassmorphism_20"] .glass-panel-active,
+:root[data-theme="glassmorphism_20"] .bg-white.rounded-xl,
+:root[data-theme="glassmorphism_20"] .bg-white.rounded-2xl {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border-color: rgba(255, 255, 255, 0.85);
+  color: #090A0C;
+}
+
+/* Highlighted large tiles (e.g. Dashboard Quick Control cards when ON) — luminous sheer glass */
+:root[data-theme="glassmorphism_20"] div.tile-hover.bg-white.rounded-2xl {
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  border-color: rgba(255, 255, 255, 0.48);
+  color: #FFFFFF;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.36),
+    0 0 22px rgba(255, 255, 255, 0.14);
+}
+:root[data-theme="glassmorphism_20"] div.tile-hover.bg-white.rounded-2xl .text-\[\#090A0C\],
+:root[data-theme="glassmorphism_20"] div.tile-hover.bg-white.rounded-2xl .hover\:text-\[\#090A0C\]:hover {
+  color: #FFFFFF;
+}
+:root[data-theme="glassmorphism_20"] div.tile-hover.bg-white.rounded-2xl .text-\[\#090A0C\]\/70,
+:root[data-theme="glassmorphism_20"] div.tile-hover.bg-white.rounded-2xl .text-\[\#090A0C\]\/60 {
+  color: rgba(255, 255, 255, 0.85);
+}
+:root[data-theme="glassmorphism_20"] div.tile-hover.bg-white.rounded-2xl .bg-\[\#090A0C\]\/10,
+:root[data-theme="glassmorphism_20"] div.tile-hover.bg-white.rounded-2xl .hover\:bg-\[\#090A0C\]\/10:hover {
+  background: rgba(255, 255, 255, 0.20);
+}
+
+/* Primary Cards & Tiles — ultra-low 6% opacity transparent glass */
+:root[data-theme="glassmorphism_20"] .glass-panel,
+:root[data-theme="glassmorphism_20"] .bg-\[\#191A1D\],
+:root[data-theme="glassmorphism_20"] .bg-\[\#191A1D\]\/60,
+:root[data-theme="glassmorphism_20"] .bg-\[\#191A1D\]\/80,
+:root[data-theme="glassmorphism_20"] .admin-studio-root .glass-panel {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(10px) saturate(135%);
+  -webkit-backdrop-filter: blur(10px) saturate(135%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-top-color: rgba(255, 255, 255, 0.26);
+  border-left-color: rgba(255, 255, 255, 0.20);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 10px 28px -8px rgba(0, 0, 0, 0.28);
+}
+
+/* Modals, Popovers & Floating Drawers (readability scrim over underlying page text) */
+:root[data-theme="glassmorphism_20"] .bg-\[\#191A1D\]\/95,
+:root[data-theme="glassmorphism_20"] .bg-\[\#191A1D\]\/98,
+:root[data-theme="glassmorphism_20"] .fixed:not(.admin-studio-root) .glass-panel,
+:root[data-theme="glassmorphism_20"] .fixed:not(.admin-studio-root) .bg-\[\#191A1D\],
+:root[data-theme="glassmorphism_20"] .absolute.z-50.bg-\[\#191A1D\] {
+  background: rgba(15, 23, 42, 0.56);
+  backdrop-filter: blur(22px) saturate(170%);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.20),
+    0 24px 56px -12px rgba(0, 0, 0, 0.50);
+}
+
+/* Nested / Recessed Wells — subtle tint inside glass cards */
+:root[data-theme="glassmorphism_20"] .bg-\[\#111214\],
+:root[data-theme="glassmorphism_20"] .bg-\[\#141518\],
+:root[data-theme="glassmorphism_20"] .bg-\[\#111214\]\/60,
+:root[data-theme="glassmorphism_20"] .bg-\[\#111214\]\/70,
+:root[data-theme="glassmorphism_20"] .bg-\[\#111214\]\/80,
+:root[data-theme="glassmorphism_20"] .bg-\[\#090A0C\]\/80,
+:root[data-theme="glassmorphism_20"] .bg-slate-900,
+:root[data-theme="glassmorphism_20"] .bg-slate-900\/40,
+:root[data-theme="glassmorphism_20"] .bg-slate-900\/60,
+:root[data-theme="glassmorphism_20"] .bg-slate-900\/80,
+:root[data-theme="glassmorphism_20"] .bg-slate-900\/90,
+:root[data-theme="glassmorphism_20"] .bg-slate-900\/95,
+:root[data-theme="glassmorphism_20"] .bg-slate-950,
+:root[data-theme="glassmorphism_20"] .bg-slate-950\/30,
+:root[data-theme="glassmorphism_20"] .bg-slate-950\/40,
+:root[data-theme="glassmorphism_20"] .bg-slate-950\/50,
+:root[data-theme="glassmorphism_20"] .bg-slate-950\/60,
+:root[data-theme="glassmorphism_20"] .bg-slate-950\/70,
+:root[data-theme="glassmorphism_20"] .bg-slate-950\/80,
+:root[data-theme="glassmorphism_20"] .bg-slate-950\/90 {
+  background: rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(10px) saturate(135%);
+  -webkit-backdrop-filter: blur(10px) saturate(135%);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Mid-level / Button Glass Surfaces — subtle 8% opacity */
+:root[data-theme="glassmorphism_20"] .glass-panel-glow,
+:root[data-theme="glassmorphism_20"] .bg-\[\#202226\],
+:root[data-theme="glassmorphism_20"] .bg-\[\#282a2e\],
+:root[data-theme="glassmorphism_20"] .bg-\[\#282B30\],
+:root[data-theme="glassmorphism_20"] .bg-slate-800,
+:root[data-theme="glassmorphism_20"] .bg-slate-800\/40,
+:root[data-theme="glassmorphism_20"] .bg-slate-800\/60,
+:root[data-theme="glassmorphism_20"] .bg-slate-800\/70,
+:root[data-theme="glassmorphism_20"] .bg-slate-800\/80,
+:root[data-theme="glassmorphism_20"] .bg-slate-800\/90,
+:root[data-theme="glassmorphism_20"] .bg-slate-700 {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px) saturate(135%);
+  -webkit-backdrop-filter: blur(10px) saturate(135%);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* Hover States */
+:root[data-theme="glassmorphism_20"] .hover\:bg-\[\#191A1D\]:hover,
+:root[data-theme="glassmorphism_20"] .hover\:bg-\[\#202226\]:hover,
+:root[data-theme="glassmorphism_20"] .hover\:bg-\[\#282a2e\]:hover,
+:root[data-theme="glassmorphism_20"] .hover\:bg-\[\#282B30\]:hover,
+:root[data-theme="glassmorphism_20"] .hover\:bg-slate-700:hover,
+:root[data-theme="glassmorphism_20"] .hover\:bg-slate-800:hover,
+:root[data-theme="glassmorphism_20"] .hover\:bg-slate-800\/40:hover,
+:root[data-theme="glassmorphism_20"] .hover\:bg-slate-800\/60:hover,
+:root[data-theme="glassmorphism_20"] .hover\:bg-slate-800\/80:hover,
+:root[data-theme="glassmorphism_20"] .hover\:bg-white\/5:hover {
+  background: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+}
+
+/* Inputs — sheer transparent glass fields */
+:root[data-theme="glassmorphism_20"] .glass-input {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px) saturate(135%);
+  -webkit-backdrop-filter: blur(10px) saturate(135%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #F8FAFC;
+}
+:root[data-theme="glassmorphism_20"] .glass-input::placeholder {
+  color: #CBD5E1;
+}
+:root[data-theme="glassmorphism_20"] .glass-input:focus {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(56, 189, 248, 0.70);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+}
+:root[data-theme="glassmorphism_20"] select option {
+  background-color: #0f172a;
+  color: #f8fafc;
+}
+
+/* Borders */
+:root[data-theme="glassmorphism_20"] .border-\[\#383A3E\],
+:root[data-theme="glassmorphism_20"] .border-\[\#383A3E\]\/80,
+:root[data-theme="glassmorphism_20"] .border-white\/10 {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+:root[data-theme="glassmorphism_20"] .border-\[\#383A3E\]\/60,
+:root[data-theme="glassmorphism_20"] .border-\[\#383A3E\]\/50,
+:root[data-theme="glassmorphism_20"] .border-\[\#383A3E\]\/40 {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+:root[data-theme="glassmorphism_20"] .border-\[\#4B4E54\] {
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+/* Crisp text readability on ultra-sheer tiles over unmasked backgrounds */
+:root[data-theme="glassmorphism_20"] .glass-panel h1,
+:root[data-theme="glassmorphism_20"] .glass-panel h2,
+:root[data-theme="glassmorphism_20"] .glass-panel h3,
+:root[data-theme="glassmorphism_20"] .glass-panel h4,
+:root[data-theme="glassmorphism_20"] .glass-panel p,
+:root[data-theme="glassmorphism_20"] .tile-hover h4,
+:root[data-theme="glassmorphism_20"] .tile-hover span,
+:root[data-theme="glassmorphism_20"] .tile-hover p,
+:root[data-theme="glassmorphism_20"] .bg-\[\#191A1D\]:not(.bg-white) h2,
+:root[data-theme="glassmorphism_20"] .bg-\[\#191A1D\]:not(.bg-white) h3,
+:root[data-theme="glassmorphism_20"] .bg-\[\#191A1D\]:not(.bg-white) h4,
+:root[data-theme="glassmorphism_20"] .bg-\[\#191A1D\]:not(.bg-white) p {
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+}
+:root[data-theme="glassmorphism_20"] .bg-white:not(.tile-hover) span,
+:root[data-theme="glassmorphism_20"] .bg-white:not(.tile-hover) p,
+:root[data-theme="glassmorphism_20"] .bg-white:not(.tile-hover) div,
+:root[data-theme="glassmorphism_20"] .text-slate-950 {
+  text-shadow: none !important;
+}
+
+/* Typography — crisp legibility on 20% glass panels */
+:root[data-theme="glassmorphism_20"] .text-\[\#A6A6A6\],
+:root[data-theme="glassmorphism_20"] .text-slate-400 {
+  color: #E2E8F0;
+}
+:root[data-theme="glassmorphism_20"] .text-\[\#777777\],
+:root[data-theme="glassmorphism_20"] .text-slate-500 {
+  color: #CBD5E1;
+}
+
+/* Background photos & room wallpapers set to 10% opacity without gradient masks */
+:root[data-theme="glassmorphism_20"] .room-wallpaper-layer {
+  left: 0 !important;
+}
+:root[data-theme="glassmorphism_20"] .room-wallpaper-img,
+:root[data-theme="glassmorphism_20"] .hero-bg-photo,
+:root[data-theme="glassmorphism_20"] .room-card-photo {
+  opacity: 0.10 !important;
+  mix-blend-mode: normal !important;
+  filter: none !important;
+}
+:root[data-theme="glassmorphism_20"] .room-wallpaper-img {
+  transform: none !important;
+}
+:root[data-theme="glassmorphism_20"] .room-wallpaper-scrim,
+:root[data-theme="glassmorphism_20"] .hero-bg-scrim,
+:root[data-theme="glassmorphism_20"] .room-card-scrim {
+  display: none !important;
+}
+:root[data-theme="glassmorphism_20"] .room-wallpaper-header h2,
+:root[data-theme="glassmorphism_20"] .room-wallpaper-header p,
+:root[data-theme="glassmorphism_20"] .hero-bg-photo ~ .relative h1,
+:root[data-theme="glassmorphism_20"] .hero-bg-photo ~ .relative p,
+:root[data-theme="glassmorphism_20"] .room-card-photo ~ div h3 {
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
+}
+
+/* Remove dark gradient scrims on background photos in 3rd theme */
+:root[data-theme="glassmorphism_20"] .from-\[\#191A1D\],
+:root[data-theme="glassmorphism_20"] .from-\[\#090A0C\],
+:root[data-theme="glassmorphism_20"] .from-\[\#090A0C\]\/60 {
+  --tw-gradient-from: transparent var(--tw-gradient-from-position);
+  --tw-gradient-to: transparent var(--tw-gradient-to-position);
+}
+:root[data-theme="glassmorphism_20"] .via-\[\#191A1D\]\/80,
+:root[data-theme="glassmorphism_20"] .via-\[\#191A1D\]\/40,
+:root[data-theme="glassmorphism_20"] .via-\[\#090A0C\]\/60,
+:root[data-theme="glassmorphism_20"] .via-\[\#090A0C\]\/75 {
+  --tw-gradient-via: transparent;
+  --tw-gradient-stops: var(--tw-gradient-from), transparent var(--tw-gradient-via-position), var(--tw-gradient-to);
+}
+:root[data-theme="glassmorphism_20"] .to-\[\#090A0C\]\/95 {
+  --tw-gradient-to: transparent var(--tw-gradient-to-position);
+}
+
+/* Tile Hover — elevated luminous glass lift */
+:root[data-theme="glassmorphism_20"] .tile-hover:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.38);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.40),
+    0 20px 44px -8px rgba(0, 0, 0, 0.50);
+}
+
+/* Scrollbar */
+:root[data-theme="glassmorphism_20"] ::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.25);
+}
+:root[data-theme="glassmorphism_20"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.24);
+}
+:root[data-theme="glassmorphism_20"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
 }

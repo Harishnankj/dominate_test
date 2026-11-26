@@ -63,6 +63,7 @@ import { DeviceMappingModal } from './DeviceMappingModal';
 import { IrCodeEditorModal } from './IrCodeEditorModal';
 import { RoomWallpaperCropModal } from './RoomWallpaperCropModal';
 import type { Device, DeviceType, Floor, Room, HaHub, IrProfile, Camera, Automation, PresetScene, UiTheme } from '../../types';
+import { normalizeUiTheme, UI_THEME_LABELS } from '../../utils/theme';
 import { PresetEditModal, PRESET_ICON_MAP } from '../scenes/PresetEditModal';
 import { QuickControlsEditModal, QUICK_CONTROL_ICON_MAP } from '../dashboard/QuickControlsEditModal';
 import { parseQuickControls, getDevicesForQuickControl } from '../../utils/deviceCategory';
@@ -183,17 +184,14 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
   const [weatherLabel, setWeatherLabel] = useState(data?.config?.weather_label || 'HQ Office');
   const [go2rtcBaseUrl, setGo2rtcBaseUrl] = useState(data?.config?.go2rtc_base_url || 'http://127.0.0.1:1984');
   const [requireHomeKey, setRequireHomeKey] = useState(data?.config?.require_home_key === 1);
-  const [uiTheme, setUiTheme] = useState<UiTheme>(
-    data?.config?.ui_theme === 'crystal_glass' ? 'crystal_glass' : 'default'
+  const [uiTheme, setUiTheme] = useState<UiTheme>(() =>
+    normalizeUiTheme(data?.config?.ui_theme)
   );
   const [savingTheme, setSavingTheme] = useState(false);
 
   React.useEffect(() => {
-    const cfgTheme = data?.config?.ui_theme;
-    if (cfgTheme === 'crystal_glass' || cfgTheme === 'default') {
-      setUiTheme(cfgTheme);
-    } else if (cfgTheme === 'glassmorphism') {
-      setUiTheme('default');
+    if (data?.config?.ui_theme) {
+      setUiTheme(normalizeUiTheme(data.config.ui_theme));
     }
   }, [data?.config?.ui_theme]);
 
@@ -209,11 +207,7 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({ onClose, initi
     try {
       await ApiService.updateConfig({ ui_theme: nextTheme });
       await refreshBootstrap();
-      showStatus(
-        nextTheme === 'crystal_glass'
-          ? 'Silver Crystal Glass theme activated'
-          : 'Obsidian Dark (Present) theme activated'
-      );
+      showStatus(`${UI_THEME_LABELS[nextTheme]} theme activated`);
     } catch (err: any) {
       showStatus(err.message || 'Failed to update theme', true);
     } finally {
@@ -4930,30 +4924,21 @@ advanced:
               <div className="pt-2 border-t border-white/10 space-y-2">
                 <label className="block text-xs font-semibold text-slate-300">Building Interface Theme</label>
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={savingTheme}
-                    onClick={() => handleSelectUiTheme('default')}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-2 ${uiTheme === 'default'
-                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
-                      : 'bg-slate-900/60 text-slate-300 border-white/10 hover:border-white/25'
-                      }`}
-                  >
-                    {uiTheme === 'default' && <Check className="w-3.5 h-3.5" />}
-                    <span>Obsidian Dark (Present)</span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={savingTheme}
-                    onClick={() => handleSelectUiTheme('crystal_glass')}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-2 ${uiTheme === 'crystal_glass'
-                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
-                      : 'bg-slate-900/60 text-slate-300 border-white/10 hover:border-white/25'
-                      }`}
-                  >
-                    {uiTheme === 'crystal_glass' && <Check className="w-3.5 h-3.5" />}
-                    <span>Silver Crystal Glass</span>
-                  </button>
+                  {(['default', 'crystal_glass', 'glassmorphism_20'] as UiTheme[]).map((themeKey) => (
+                    <button
+                      key={themeKey}
+                      type="button"
+                      disabled={savingTheme}
+                      onClick={() => handleSelectUiTheme(themeKey)}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-2 ${uiTheme === themeKey
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
+                        : 'bg-slate-900/60 text-slate-300 border-white/10 hover:border-white/25'
+                        }`}
+                    >
+                      {uiTheme === themeKey && <Check className="w-3.5 h-3.5" />}
+                      <span>{UI_THEME_LABELS[themeKey]}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -4982,15 +4967,11 @@ advanced:
                   </p>
                 </div>
                 <span className="px-3 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-mono font-semibold">
-                  {savingTheme
-                    ? 'Applying Theme...'
-                    : uiTheme === 'crystal_glass'
-                      ? 'Active: Silver Crystal Glass'
-                      : 'Active: Obsidian Dark (Present)'}
+                  {savingTheme ? 'Applying Theme...' : `Active: ${UI_THEME_LABELS[uiTheme]}`}
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 max-w-6xl">
                 {/* Option 1: Obsidian Dark (Present Theme) */}
                 <button
                   type="button"
@@ -5156,6 +5137,102 @@ advanced:
                         }`}
                     >
                       {uiTheme === 'crystal_glass' ? (
+                        <>
+                          <Check className="w-3 h-3" /> Active
+                        </>
+                      ) : (
+                        'Select'
+                      )}
+                    </span>
+                  </div>
+                </button>
+
+                {/* Option 3: Glassmorphism (20% Opacity) */}
+                <button
+                  type="button"
+                  disabled={savingTheme}
+                  onClick={() => handleSelectUiTheme('glassmorphism_20')}
+                  className={`text-left glass-panel rounded-2xl p-5 border transition-all space-y-4 ${uiTheme === 'glassmorphism_20'
+                    ? 'border-cyan-400/70 ring-1 ring-cyan-400/40 shadow-[0_0_24px_rgba(34,211,238,0.16)]'
+                    : 'border-white/10 hover:border-white/30'
+                    }`}
+                >
+                  {/* Visual Preview — 20% opacity glassmorphism panels on dark ambient aurora */}
+                  <div
+                    className="relative h-40 rounded-xl overflow-hidden p-3 flex gap-2.5"
+                    style={{
+                      background:
+                        'radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.45), transparent 55%), radial-gradient(circle at 85% 80%, rgba(139, 92, 246, 0.45), transparent 55%), linear-gradient(145deg, #060914 0%, #0b1224 100%)',
+                      border: '1px solid rgba(255, 255, 255, 0.22)',
+                    }}
+                  >
+                    <div
+                      className="w-14 h-full rounded-lg p-2 space-y-1.5 shrink-0"
+                      style={{
+                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                        backdropFilter: 'blur(10px)',
+                        border: '1px solid rgba(255, 255, 255, 0.16)',
+                      }}
+                    >
+                      <div className="h-2.5 w-9 rounded" style={{ backgroundColor: 'rgba(255, 255, 255, 0.85)' }} />
+                      <div className="h-2 w-10 rounded" style={{ backgroundColor: 'rgba(255, 255, 255, 0.16)' }} />
+                      <div className="h-2 w-8 rounded" style={{ backgroundColor: 'rgba(255, 255, 255, 0.12)' }} />
+                    </div>
+                    <div className="flex-1 flex flex-col gap-2">
+                      <div
+                        className="h-7 rounded-lg px-2.5 flex items-center justify-between"
+                        style={{
+                          backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                          backdropFilter: 'blur(10px)',
+                          border: '1px solid rgba(255, 255, 255, 0.16)',
+                        }}
+                      >
+                        <div className="h-2 w-16 rounded" style={{ backgroundColor: 'rgba(255, 255, 255, 0.78)' }} />
+                        <div className="w-2 h-2 rounded-full bg-[#22D68A]" />
+                      </div>
+                      <div className="flex-1 grid grid-cols-3 gap-2">
+                        {[0, 1, 2].map((i) => (
+                          <div
+                            key={i}
+                            className="rounded-lg p-2 flex flex-col justify-between"
+                            style={{
+                              backgroundColor: i === 0 ? 'rgba(255, 255, 255, 0.78)' : 'rgba(255, 255, 255, 0.06)',
+                              backdropFilter: 'blur(10px)',
+                              border: '1px solid rgba(255, 255, 255, 0.18)',
+                            }}
+                          >
+                            <div
+                              className="w-3 h-3 rounded"
+                              style={{
+                                backgroundColor: i === 0 ? 'rgba(9, 10, 12, 0.18)' : 'rgba(255, 255, 255, 0.25)',
+                              }}
+                            />
+                            <div
+                              className="h-2 w-8 rounded"
+                              style={{
+                                backgroundColor: i === 0 ? 'rgba(9, 10, 12, 0.72)' : 'rgba(255, 255, 255, 0.65)',
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-white">Glassmorphism (20% Opacity)</h4>
+                      <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                        Translucent 20% opacity frosted glass panels floating over a deep ambient gradient canvas.
+                      </p>
+                    </div>
+                    <span
+                      className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold border flex items-center gap-1 ${uiTheme === 'glassmorphism_20'
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                        : 'bg-slate-800/70 text-slate-300 border-white/10'
+                        }`}
+                    >
+                      {uiTheme === 'glassmorphism_20' ? (
                         <>
                           <Check className="w-3 h-3" /> Active
                         </>

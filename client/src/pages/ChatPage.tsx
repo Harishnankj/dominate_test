@@ -92,9 +92,21 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   const [language, setLanguage] = useState<'en-IN' | 'ml-IN'>('en-IN');
   const [inputText, setInputText] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [voiceStage, setVoiceStage] = useState<'idle' | 'starting' | 'audio' | 'speech' | 'transcribing'>('idle');
+  const [micTestActive, setMicTestActive] = useState(false);
+  const [micLevel, setMicLevel] = useState(0);
+  const [micDeviceLabel, setMicDeviceLabel] = useState('');
+  const [audioInputDevices, setAudioInputDevices] = useState<Array<{ deviceId: string; label: string }>>([]);
+  const [selectedMicId, setSelectedMicId] = useState<string>(() => {
+    try {
+      return localStorage.getItem('domios_selected_mic_id') || '';
+    } catch {
+      return '';
+    }
+  });
   const [speechEnabled, setSpeechEnabled] = useState(true);
   const [micPermissionState, setMicPermissionState] = useState<'prompt' | 'granted' | 'denied' | 'unknown'>('unknown');
-  const [isLocalhost, setIsLocalhost] = useState(true);
+  const [isSecureMicContext, setIsSecureMicContext] = useState(true);
   const [companionState, setCompanionState] = useState<DomflyState>('idle');
 
   const updateCompanionState = (st: DomflyState) => {
@@ -112,95 +124,143 @@ export const ChatPage: React.FC<ChatPageProps> = ({
   ]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-  const recognitionRef = useRef<any>(null);
   const handleSendMessageRef = useRef<(text?: string) => Promise<void>>(() => Promise.resolve());
+  const micTestStreamRef = useRef<MediaStream | null>(null);
+  const micTestAudioCtxRef = useRef<AudioContext | null>(null);
+  const micTestRafRef = useRef<number | null>(null);
+  const activeVoiceStopRef = useRef<((opts?: { submit?: boolean }) => void) | null>(null);
 
-  const initRecognition = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.warn('[SpeechRecognition] Browser does not support SpeechRecognition');
-      return null;
-    }
+  const checkSecureMicContext = () => {
+    if (typeof window === 'undefined') return true;
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    return Boolean(window.isSecureContext || isLocal || window.location.protocol === 'https:');
+  };
 
+  const refreshAudioInputDevices = async () => {
     try {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.abort();
-        } catch (_) {}
+      if (!navigator.mediaDevices?.enumerateDevices) return;
+      const list = await navigator.mediaDevices.enumerateDevices();
+      const mics = list
+        .filter((d) => d.kind === 'audioinput' && d.deviceId)
+        .map((d, idx) => ({
+          deviceId: d.deviceId,
+          label: d.label || `Microphone ${idx + 1}`,
+        }));
+      setAudioInputDevices(mics);
+    } catch (_) {}
+  };
+
+  const int16ArrayToBase64 = (pcm16: Int16Array): string => {
+    const bytes = new Uint8Array(pcm16.buffer);
+    let binary = '';
+    const block = 0x8000;
+    for (let i = 0; i < bytes.length; i += block) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + block));
+    }
+    return btoa(binary);
+  };
+
+  const decodeBlobTo16kPcm16 = async (
+    blob: Blob
+  ): Promise<{ base64: string; rms: number; peak: number; durationSec: number }> => {
+    const arrayBuffer = await blob.arrayBuffer();
+    const DecodeCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const decodeCtx = new DecodeCtx();
+    try {
+      const decoded = await decodeCtx.decodeAudioData(arrayBuffer.slice(0));
+      const targetRate = 16000;
+      const targetLen = Math.max(1, Math.ceil(decoded.duration * targetRate));
+      const offline = new OfflineAudioContext(1, targetLen, targetRate);
+      const src = offline.createBufferSource();
+
+      if (decoded.numberOfChannels > 1) {
+        const mixed = offline.createBuffer(1, decoded.length, decoded.sampleRate);
+        const outCh = mixed.getChannelData(0);
+        for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+          const chData = decoded.getChannelData(ch);
+          for (let i = 0; i < decoded.length; i++) {
+            outCh[i] += chData[i] / decoded.numberOfChannels;
+          }
+        }
+        src.buffer = mixed;
+      } else {
+        src.buffer = decoded;
       }
 
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = language;
-
-      recognition.onstart = () => {
-        setIsListening(true);
-        updateCompanionState('listening');
+      src.connect(offline.destination);
+      src.start(0);
+      const rendered = await offline.startRendering();
+      const samples = rendered.getChannelData(0);
+      const pcm16 = new Int16Array(samples.length);
+      let sumSq = 0;
+      let peak = 0;
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        const abs = Math.abs(s);
+        if (abs > peak) peak = abs;
+        sumSq += s * s;
+        const clamped = Math.max(-1, Math.min(1, s));
+        pcm16[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
+      }
+      const rms = samples.length > 0 ? Math.sqrt(sumSq / samples.length) : 0;
+      return {
+        base64: int16ArrayToBase64(pcm16),
+        rms,
+        peak,
+        durationSec: decoded.duration,
       };
-
-      recognition.onresult = (event: any) => {
-        let interim = '';
-        let final = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            final += event.results[i][0].transcript;
-          } else {
-            interim += event.results[i][0].transcript;
-          }
-        }
-        if (interim) {
-          setInputText(interim);
-        }
-        if (final) {
-          const clean = final.trim();
-          setInputText(clean);
-          if (clean) {
-            handleSendMessageRef.current(clean);
-          }
-        }
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-        updateCompanionState('idle');
-      };
-
-      recognition.onerror = (event: any) => {
-        console.warn('[SpeechRecognition] error:', event.error);
-        setIsListening(false);
-        if (event.error === 'not-allowed') {
-          setMicPermissionState('denied');
-          const warnMsg: ChatMessage = {
-            id: `err_${Date.now()}`,
-            sender: 'assistant',
-            text: 'Microphone permission was denied. Please allow microphone access in your browser address bar (click the tune or lock icon beside the URL).',
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          };
-          setMessages((prev) => [...prev, warnMsg]);
-        } else if (event.error === 'network') {
-          const warnMsg: ChatMessage = {
-            id: `err_${Date.now()}`,
-            sender: 'assistant',
-            text: 'Voice recognition network error. Please check your internet connection or type your command below.',
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          };
-          setMessages((prev) => [...prev, warnMsg]);
-        }
-      };
-
-      recognitionRef.current = recognition;
-      return recognition;
-    } catch (err) {
-      console.warn('[SpeechRecognition] init failed:', err);
-      return null;
+    } finally {
+      await decodeCtx.close().catch(() => {});
     }
+  };
+
+  const getAudioConstraints = (): MediaStreamConstraints => {
+    if (selectedMicId) {
+      return { audio: { deviceId: { exact: selectedMicId } } };
+    }
+    return { audio: true };
+  };
+
+  const stopMicTest = () => {
+    if (micTestRafRef.current !== null) {
+      cancelAnimationFrame(micTestRafRef.current);
+      micTestRafRef.current = null;
+    }
+    if (micTestStreamRef.current) {
+      micTestStreamRef.current.getTracks().forEach((t) => t.stop());
+      micTestStreamRef.current = null;
+    }
+    if (micTestAudioCtxRef.current) {
+      micTestAudioCtxRef.current.close().catch(() => {});
+      micTestAudioCtxRef.current = null;
+    }
+    setMicTestActive(false);
+    setMicLevel(0);
+  };
+
+  const appendAssistantNotice = (text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    setMessages((prev) => {
+      if (prev.length > 0 && prev[prev.length - 1].sender === 'assistant' && prev[prev.length - 1].text === clean) {
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          id: `notice_${Date.now()}`,
+          sender: 'assistant',
+          text: clean,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ];
+    });
   };
 
   // Monitor microphone permission state and secure context
   useEffect(() => {
-    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    setIsLocalhost(isLocal);
+    setIsSecureMicContext(checkSecureMicContext());
+    void refreshAudioInputDevices();
 
     if (navigator.permissions && navigator.permissions.query) {
       navigator.permissions
@@ -217,88 +277,400 @@ export const ChatPage: React.FC<ChatPageProps> = ({
     }
   }, []);
 
-  // Initialize Speech Recognition on mount and language change
+  // Clean up mic capture and mic tester on unmount
   useEffect(() => {
-    initRecognition();
     return () => {
-      try {
-        recognitionRef.current?.abort();
-      } catch (_) {}
+      activeVoiceStopRef.current?.({ submit: false });
+      stopMicTest();
     };
-  }, [language]);
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Request browser microphone permission proactively
-  const requestMicPermission = async (): Promise<boolean> => {
+  // Live Web Audio microphone signal check
+  const toggleMicTest = async () => {
+    if (micTestActive) {
+      stopMicTest();
+      return;
+    }
+
+    const secure = checkSecureMicContext();
+    setIsSecureMicContext(secure);
+    if (!secure || !navigator.mediaDevices?.getUserMedia) {
+      appendAssistantNotice(
+        `Microphone testing requires HTTPS or localhost (currently on HTTP ${window.location.host}). Open https://${window.location.hostname}:5174/assistant.`
+      );
+      return;
+    }
+
+    if (isListening || activeVoiceStopRef.current) {
+      activeVoiceStopRef.current?.({ submit: false });
+    }
+
     try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach((track) => track.stop());
-        setMicPermissionState('granted');
-        initRecognition();
-        return true;
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(getAudioConstraints());
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
+      micTestStreamRef.current = stream;
+      setMicPermissionState('granted');
+      await refreshAudioInputDevices();
+      const track = stream.getAudioTracks()[0];
+      setMicDeviceLabel(track?.label || 'Default Browser Microphone');
+
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+      micTestAudioCtxRef.current = ctx;
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.fftSize);
+      setMicTestActive(true);
+
+      const tick = () => {
+        if (!micTestStreamRef.current) return;
+        analyser.getByteTimeDomainData(dataArray);
+        let peak = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const deviation = Math.abs(dataArray[i] - 128) / 128;
+          if (deviation > peak) peak = deviation;
+        }
+        setMicLevel(Math.min(100, Math.round(peak * 220)));
+        micTestRafRef.current = requestAnimationFrame(tick);
+      };
+      micTestRafRef.current = requestAnimationFrame(tick);
     } catch (err: any) {
-      console.warn('[requestMicPermission] error:', err);
-      setMicPermissionState('denied');
+      const errName = err?.name || '';
+      stopMicTest();
+      if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+        setMicPermissionState('denied');
+        appendAssistantNotice(
+          `Microphone permission is blocked. Click the tune/lock icon beside ${window.location.host} -> allow Microphone -> reload the page.`
+        );
+      } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
+        appendAssistantNotice('No microphone hardware was found. Connect or enable an input mic in Windows Sound settings.');
+      } else {
+        appendAssistantNotice(`Could not open microphone test (${err?.message || errName || 'unknown error'}).`);
+      }
+    }
+  };
+
+  // Request browser microphone permission proactively (for header/banner button)
+  const requestMicPermission = async (): Promise<boolean> => {
+    const secure = checkSecureMicContext();
+    setIsSecureMicContext(secure);
+
+    if (!secure || !navigator.mediaDevices?.getUserMedia) {
+      appendAssistantNotice(
+        `Your browser blocks microphone access on HTTP (${window.location.host}). Open https://${window.location.hostname}:5174/assistant (tap Advanced -> Proceed) or use http://localhost:5173.`
+      );
       return false;
     }
-    return false;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(getAudioConstraints());
+      const label = stream.getAudioTracks()[0]?.label;
+      if (label) setMicDeviceLabel(label);
+      stream.getTracks().forEach((track) => track.stop());
+      setMicPermissionState('granted');
+      await refreshAudioInputDevices();
+      return true;
+    } catch (err: any) {
+      const errName = err?.name || '';
+      console.warn('[requestMicPermission] error:', errName, err);
+      if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+        setMicPermissionState('denied');
+        appendAssistantNotice(
+          `Microphone permission is blocked. Click the tune/lock icon beside ${window.location.host} -> allow Microphone -> reload the page.`
+        );
+      } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
+        appendAssistantNotice('No microphone device was found on this system. Connect/enable a mic and try again.');
+      } else if (errName === 'NotReadableError' || errName === 'TrackStartError') {
+        appendAssistantNotice('Microphone hardware could not be started (it may be in use by another app).');
+      } else {
+        appendAssistantNotice(`Unable to access microphone (${err?.message || errName || 'unknown error'}).`);
+      }
+      return false;
+    }
   };
 
   const toggleMic = async () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-        const warnMsg: ChatMessage = {
-          id: `err_${Date.now()}`,
-          sender: 'assistant',
-          text: `Voice recognition on mobile phones requires HTTPS. Please open https://${window.location.hostname}:5174/assistant on your phone, tap 'Advanced' -> 'Proceed', and allow microphone access.`,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        };
-        setMessages((prev) => [...prev, warnMsg]);
-      } else {
-        alert('Speech recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge, or type your command below.');
-      }
+    const secure = checkSecureMicContext();
+    setIsSecureMicContext(secure);
+
+    // If currently listening, stop and transcribe captured speech right away
+    if (isListening && activeVoiceStopRef.current) {
+      activeVoiceStopRef.current({ submit: true });
       return;
     }
 
-    if (isListening) {
-      try {
-        recognitionRef.current?.stop();
-      } catch (_) {}
-      setIsListening(false);
-      updateCompanionState('idle');
+    if (voiceStage === 'transcribing') {
       return;
     }
 
-    // Ensure permission is granted first
-    if (micPermissionState !== 'granted') {
-      const granted = await requestMicPermission();
-      if (!granted) {
-        return;
-      }
+    if (!secure || !navigator.mediaDevices?.getUserMedia) {
+      appendAssistantNotice(
+        `Microphone input requires HTTPS or localhost (currently on HTTP ${window.location.host}). Open https://${window.location.hostname}:5174/assistant (tap Advanced -> Proceed) and try the mic again.`
+      );
+      return;
     }
+
+    if (typeof MediaRecorder === 'undefined') {
+      appendAssistantNotice('This browser does not support MediaRecorder audio capture. Please use Google Chrome or Microsoft Edge.');
+      return;
+    }
+
+    if (micTestActive) {
+      stopMicTest();
+    }
+
+    // Stop active speech synthesis so speaker output never feeds back into the mic
+    try {
+      window.speechSynthesis?.cancel();
+    } catch (_) {}
+
+    setVoiceStage('starting');
+
+    let stream: MediaStream | null = null;
+    let ctx: AudioContext | null = null;
+    let recorder: MediaRecorder | null = null;
+    let rafId: number | null = null;
 
     try {
-      let rec = recognitionRef.current;
-      if (!rec) {
-        rec = initRecognition();
-      }
-      if (rec) {
-        rec.lang = language;
-        rec.start();
-        setIsListening(true);
-      }
-    } catch (err: any) {
-      console.warn('[Mic] start error:', err);
       try {
-        recognitionRef.current?.abort();
-      } catch (_) {}
+        stream = await navigator.mediaDevices.getUserMedia(getAudioConstraints());
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+      setMicPermissionState('granted');
+      await refreshAudioInputDevices();
+      const track = stream.getAudioTracks()[0];
+      setMicDeviceLabel(track?.label || 'Default Browser Microphone');
+
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : '';
+
+      recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      const recordedChunks: Blob[] = [];
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) {
+          recordedChunks.push(ev.data);
+        }
+      };
+
+      const dataArray = new Uint8Array(analyser.fftSize);
+      let speechStarted = false;
+      let lastVoiceAt = 0;
+      const startedAt = Date.now();
+      let closed = false;
+      let peakMaxSeen = 0;
+
+      const cleanupHardware = () => {
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        try {
+          source.disconnect();
+        } catch (_) {}
+        if (stream) {
+          stream.getTracks().forEach((t) => t.stop());
+          stream = null;
+        }
+        if (ctx) {
+          ctx.close().catch(() => {});
+          ctx = null;
+        }
+      };
+
+      const finishCapture = (opts: { submit?: boolean; reason?: 'manual' | 'silence' | 'timeout' | 'max' } = {}) => {
+        if (closed) return;
+        closed = true;
+        activeVoiceStopRef.current = null;
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+
+        setIsListening(false);
+        setMicLevel(0);
+
+        if (!opts.submit) {
+          if (recorder && recorder.state !== 'inactive') {
+            recorder.onstop = null;
+            try {
+              recorder.stop();
+            } catch (_) {}
+          }
+          cleanupHardware();
+          setVoiceStage('idle');
+          updateCompanionState('idle');
+          return;
+        }
+
+        const processRecordedBlob = async () => {
+          cleanupHardware();
+          try {
+            const blob = new Blob(recordedChunks, { type: recorder?.mimeType || mimeType || 'audio/webm' });
+            if (blob.size < 256) {
+              setVoiceStage('idle');
+              updateCompanionState('idle');
+              appendAssistantNotice('No audio data was recorded. Please speak clearly into the mic and try again.');
+              return;
+            }
+
+            setVoiceStage('transcribing');
+            updateCompanionState('processing');
+            const decoded = await decodeBlobTo16kPcm16(blob);
+
+            if (decoded.durationSec < 0.25 || (decoded.rms < 0.0008 && decoded.peak < 0.003)) {
+              setVoiceStage('idle');
+              updateCompanionState('idle');
+              appendAssistantNotice(
+                `Captured mic signal was silent (0%). Try picking another mic in the dropdown or click "Test Mic" (${track?.label || 'Default'}).`
+              );
+              return;
+            }
+
+            const res = await ApiService.transcribeVoice(decoded.base64, language);
+            const text = (res.text || '').trim();
+            setVoiceStage('idle');
+
+            if (text) {
+              setInputText(text);
+              await handleSendMessageRef.current(text);
+            } else {
+              updateCompanionState('idle');
+              appendAssistantNotice(
+                'Audio was captured, but no clear command words were recognized. Please speak a bit slower near the mic.'
+              );
+            }
+          } catch (err: any) {
+            console.warn('[VoiceSTT] transcribe error:', err);
+            setVoiceStage('idle');
+            updateCompanionState('idle');
+            appendAssistantNotice(
+              `Voice transcription error: ${err?.message || 'unable to decode or reach local voice service'}.`
+            );
+          }
+        };
+
+        if (recorder && recorder.state !== 'inactive') {
+          recorder.onstop = () => {
+            void processRecordedBlob();
+          };
+          try {
+            recorder.stop();
+          } catch (_) {
+            void processRecordedBlob();
+          }
+        } else {
+          void processRecordedBlob();
+        }
+      };
+
+      activeVoiceStopRef.current = (opts) => {
+        finishCapture({ submit: opts?.submit ?? true, reason: 'manual' });
+      };
+
+      recorder.start(250);
+      setIsListening(true);
+      setVoiceStage('audio');
+      updateCompanionState('listening');
+
+      const monitor = () => {
+        if (closed) return;
+        analyser.getByteTimeDomainData(dataArray);
+        let peak = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const deviation = Math.abs(dataArray[i] - 128) / 128;
+          if (deviation > peak) peak = deviation;
+        }
+        if (peak > peakMaxSeen) peakMaxSeen = peak;
+        setMicLevel(Math.min(100, Math.round(peak * 220)));
+
+        const now = Date.now();
+        const voiceActive = peak >= 0.008;
+
+        if (!speechStarted) {
+          if (voiceActive) {
+            speechStarted = true;
+            lastVoiceAt = now;
+            setVoiceStage('speech');
+          } else if (now - startedAt > 9000) {
+            finishCapture({ submit: true, reason: 'timeout' });
+            return;
+          }
+        } else {
+          if (voiceActive) {
+            lastVoiceAt = now;
+          } else if (now - lastVoiceAt > 1400) {
+            finishCapture({ submit: true, reason: 'silence' });
+            return;
+          } else if (now - startedAt > 12000) {
+            finishCapture({ submit: true, reason: 'max' });
+            return;
+          }
+        }
+
+        rafId = requestAnimationFrame(monitor);
+      };
+      rafId = requestAnimationFrame(monitor);
+    } catch (err: any) {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      if (recorder && recorder.state !== 'inactive') {
+        try {
+          recorder.stop();
+        } catch (_) {}
+      }
+      if (stream) {
+        (stream as MediaStream).getTracks().forEach((t) => t.stop());
+      }
+      if (ctx) {
+        (ctx as AudioContext).close().catch(() => {});
+      }
+      activeVoiceStopRef.current = null;
       setIsListening(false);
+      setVoiceStage('idle');
+      setMicLevel(0);
+      updateCompanionState('idle');
+
+      const errName = err?.name || '';
+      if (errName === 'NotAllowedError' || errName === 'PermissionDeniedError') {
+        setMicPermissionState('denied');
+        appendAssistantNotice(
+          `Microphone permission is blocked. Allow microphone access in your browser address bar for ${window.location.host} and try again.`
+        );
+      } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
+        appendAssistantNotice('No microphone device was found. Connect or enable an input mic in Windows Sound settings.');
+      } else if (errName === 'NotReadableError' || errName === 'TrackStartError') {
+        appendAssistantNotice('Microphone hardware is busy in another app. Close the other app or reconnect your mic.');
+      } else {
+        appendAssistantNotice(`Could not start microphone (${err?.message || errName || 'unknown error'}).`);
+      }
     }
   };
 
@@ -1325,10 +1697,10 @@ export const ChatPage: React.FC<ChatPageProps> = ({
                 }`}
                 title={
                   micPermissionState === 'granted'
-                    ? 'Microphone is enabled for localhost:5173'
+                    ? `Microphone is enabled for ${typeof window !== 'undefined' ? window.location.host : 'this origin'}`
                     : micPermissionState === 'denied'
                     ? 'Microphone is blocked in browser settings. Click the tune icon in the URL bar to allow.'
-                    : 'Click to grant microphone permission for localhost:5173'
+                    : `Click to grant microphone permission for ${typeof window !== 'undefined' ? window.location.host : 'this origin'}`
                 }
               >
                 {micPermissionState === 'granted' ? (
@@ -1386,18 +1758,23 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       )}
 
       {/* Microphone Permission Prompt Banner */}
-      {micPermissionState === 'prompt' && (
+      {isSecureMicContext && micPermissionState === 'prompt' && (
         <div className="bg-[#191A1D] border border-[#383A3E] rounded-2xl p-3 flex items-center justify-between gap-3 text-xs text-[#F5F5F5] shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-[#111214] border border-[#383A3E] text-white flex items-center justify-center shrink-0">
               <Mic className="w-4 h-4 animate-bounce" />
             </div>
             <div>
-              <span className="font-bold text-[#F5F5F5] block">Microphone Voice Control for localhost</span>
-              <span className="text-[11px] text-[#A6A6A6] block">Click "Allow Microphone" to grant voice control permissions for all users on this localhost link.</span>
+              <span className="font-bold text-[#F5F5F5] block">
+                Microphone Voice Control ({typeof window !== 'undefined' ? window.location.host : 'DOMIOS'})
+              </span>
+              <span className="text-[11px] text-[#A6A6A6] block">
+                Click &quot;Allow Microphone&quot; or press the mic button below to grant voice control permissions.
+              </span>
             </div>
           </div>
           <button
+            type="button"
             onClick={requestMicPermission}
             className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-neutral-200 text-slate-950 font-bold text-xs shadow-sm shrink-0 transition-colors"
           >
@@ -1407,25 +1784,27 @@ export const ChatPage: React.FC<ChatPageProps> = ({
       )}
 
       {/* Microphone Denied Notice */}
-      {micPermissionState === 'denied' && (
+      {isSecureMicContext && micPermissionState === 'denied' && (
         <div className="bg-[#191A1D] border border-[#FF5757]/40 rounded-2xl p-3 flex items-center gap-3 text-xs text-[#FF5757] shrink-0">
           <MicOff className="w-5 h-5 text-[#FF5757] shrink-0" />
           <div>
             <span className="font-bold block">Microphone is blocked in your browser</span>
             <span className="text-[11px] text-[#A6A6A6] block">
-              To allow voice commands: click the <strong>tune/lock icon</strong> on the left side of <code>localhost:5173</code> in the address bar &rarr; set <strong>Microphone</strong> to <strong>Allow</strong> &rarr; reload the page.
+              To allow voice commands: click the <strong>tune/lock icon</strong> on the left side of{' '}
+              <code>{typeof window !== 'undefined' ? window.location.host : 'the URL'}</code> in the address bar &rarr; set{' '}
+              <strong>Microphone</strong> to <strong>Allow</strong> &rarr; reload the page.
             </span>
           </div>
         </div>
       )}
 
-      {/* Notice if accessing via insecure HTTP on a remote device */}
-      {window.location.protocol !== 'https:' && !isLocalhost && (
+      {/* Notice if accessing via insecure HTTP on a non-localhost address */}
+      {!isSecureMicContext && typeof window !== 'undefined' && (
         <div className="bg-[#191A1D] border border-[#F0B94D]/40 rounded-2xl p-3 flex items-center justify-between gap-3 text-xs text-[#F5F5F5] shrink-0">
           <div className="flex items-center gap-2.5">
             <Sparkles className="w-4 h-4 text-[#F0B94D] shrink-0" />
             <span>
-              <strong>Phone Voice Setup</strong>: Mobile browsers block microphone on HTTP. Tap to switch to the secure HTTPS link.
+              <strong>Voice Input Requires HTTPS</strong>: Browsers block microphone on plain HTTP ({window.location.host}). Switch to the secure HTTPS link to enable mic.
             </span>
           </div>
           <a
@@ -1548,16 +1927,104 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Live Voice Capture Status / Mic Signal Tester */}
+      {(isListening || micTestActive || voiceStage === 'transcribing') && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#191A1D] border border-[#383A3E] text-[11px] shrink-0">
+          {voiceStage === 'transcribing' ? (
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping shrink-0" />
+              <span className="font-semibold text-[#F5F5F5] truncate">
+                Transcribing voice locally ({language === 'ml-IN' ? 'Malayalam' : 'English'})...
+              </span>
+            </div>
+          ) : isListening ? (
+            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 ${
+                  voiceStage === 'speech'
+                    ? 'bg-[#22D68A] animate-ping'
+                    : 'bg-[#FF5757] animate-pulse'
+                }`}
+              />
+              <span className="font-semibold text-[#F5F5F5] shrink-0">
+                {voiceStage === 'speech'
+                  ? 'Voice detected — speak (click mic to send)'
+                  : 'Listening — speak now'}
+              </span>
+              <div className="flex-1 max-w-[110px] h-2 rounded-full bg-[#111214] border border-[#383A3E] overflow-hidden">
+                <div
+                  className="h-full bg-[#22D68A] transition-all duration-75"
+                  style={{ width: `${micLevel}%` }}
+                />
+              </div>
+              <span className="font-mono text-[10px] text-[#22D68A] shrink-0">{micLevel}%</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2.5 flex-1 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-[#22D68A] animate-pulse shrink-0" />
+              <span className="font-semibold text-[#F5F5F5] shrink-0">Mic Level:</span>
+              <div className="flex-1 max-w-[160px] h-2 rounded-full bg-[#111214] border border-[#383A3E] overflow-hidden">
+                <div
+                  className="h-full bg-[#22D68A] transition-all duration-75"
+                  style={{ width: `${micLevel}%` }}
+                />
+              </div>
+              <span className="font-mono text-[10px] text-[#22D68A] shrink-0">{micLevel}%</span>
+              {micDeviceLabel && (
+                <span className="text-[10px] font-mono text-[#A6A6A6] truncate hidden sm:inline">
+                  {micDeviceLabel}
+                </span>
+              )}
+            </div>
+          )}
+
+          {voiceStage !== 'transcribing' && (
+            <div className="flex items-center gap-1.5 shrink-0">
+              {audioInputDevices.length > 1 && (
+                <select
+                  value={selectedMicId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedMicId(val);
+                    try {
+                      localStorage.setItem('domios_selected_mic_id', val);
+                    } catch (_) {}
+                  }}
+                  className="max-w-[140px] bg-[#111214] border border-[#383A3E] rounded-lg px-2 py-1 text-[10px] font-mono text-[#F5F5F5] focus:outline-none"
+                  title="Select microphone input device"
+                >
+                  <option value="">Default Mic</option>
+                  {audioInputDevices.map((d) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                type="button"
+                onClick={isListening ? toggleMic : toggleMicTest}
+                className="px-2.5 py-1 rounded-lg bg-[#111214] border border-[#383A3E] hover:border-white/40 text-[10px] font-mono font-semibold text-[#F5F5F5] shrink-0"
+              >
+                {isListening ? 'Send Now' : 'Stop Test'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Chat Input & Mic Bar */}
       <div className="flex items-center gap-2 bg-[#191A1D] p-2 rounded-2xl border border-[#383A3E] shrink-0">
         <button
+          type="button"
           onClick={toggleMic}
           className={`p-3 rounded-xl transition-all ${
             isListening
-              ? 'bg-[#FF5757] text-white animate-pulse'
+              ? 'bg-[#FF5757] !text-white animate-pulse'
               : 'bg-[#111214] border border-[#383A3E] hover:border-white/40 text-white'
           }`}
           title={isListening ? 'Stop listening' : 'Start speaking'}
+          aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
         >
           {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
         </button>
@@ -1565,10 +2032,12 @@ export const ChatPage: React.FC<ChatPageProps> = ({
         <input
           type="text"
           placeholder={
-            isListening
+            voiceStage === 'transcribing'
+              ? 'Transcribing speech...'
+              : isListening
               ? language === 'ml-IN'
                 ? 'കേൾക്കുന്നു... സംസാരിക്കുക'
-                : 'Listening...'
+                : 'Listening... speak now'
               : language === 'ml-IN'
               ? 'പറയുക അല്ലെങ്കിൽ ടൈപ്പ് ചെയ്യുക: "ക്യാമറ qqq കാണിക്കുക", "വാതിൽ തുറക്കുക", "സ്വിച്ച് 1 ഓൺ ചെയ്യുക"...'
               : 'Say or type: "See visuals of camera qqq", "light on aakku", "vaathil thurakku", "Turn on Switch 1"...'
@@ -1579,10 +2048,24 @@ export const ChatPage: React.FC<ChatPageProps> = ({
           className="flex-1 bg-[#111214] border border-[#383A3E] rounded-xl px-4 py-2.5 text-xs text-[#F5F5F5] placeholder-[#777777] focus:border-white/50 focus:outline-none"
         />
 
+        {!isListening && !micTestActive && voiceStage === 'idle' && isSecureMicContext && (
+          <button
+            type="button"
+            onClick={toggleMicTest}
+            className="px-2.5 py-2.5 rounded-xl bg-[#111214] border border-[#383A3E] hover:border-white/40 text-[#A6A6A6] hover:text-white text-[10px] font-mono font-semibold shrink-0 inline-flex items-center gap-1"
+            title="Check if browser receives microphone audio signal"
+          >
+            <Activity className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Test Mic</span>
+          </button>
+        )}
+
         <button
+          type="button"
           onClick={() => handleSendMessage()}
           disabled={!inputText.trim()}
           className="p-3 rounded-xl bg-white hover:bg-neutral-200 text-slate-950 font-bold shadow-sm disabled:opacity-40 active:scale-95 transition-all"
+          aria-label="Send message"
         >
           <Send className="w-4 h-4" />
         </button>

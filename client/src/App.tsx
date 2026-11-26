@@ -25,12 +25,25 @@ import { FloatingAssistantDrawer } from './components/companion/FloatingAssistan
 import type { DomflyState } from './components/companion/DomflyCharacter';
 
 import type { Camera, Room, UiTheme } from './types';
+import { normalizeUiTheme } from './utils/theme';
 
 export const App: React.FC = () => {
   const { isSetupCompleted, loading: authLoading } = useAuth();
   const { data, loading: bootstrapLoading, getRoom } = useBootstrap();
 
-  const [currentTab, setCurrentTab] = useState<string>('dashboard');
+  const [currentTab, setCurrentTab] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'dashboard';
+    const path = window.location.pathname.toLowerCase();
+    const tabParam = new URLSearchParams(window.location.search).get('tab')?.toLowerCase();
+    if (path === '/assistant' || tabParam === 'chat' || tabParam === 'assistant') {
+      return 'chat';
+    }
+    const validTabs = ['dashboard', 'favorites', 'view', 'cctv', 'scenes', 'automations', 'chat', 'devices', 'energy', 'locks'];
+    if (tabParam && validTabs.includes(tabParam)) {
+      return tabParam;
+    }
+    return 'dashboard';
+  });
   const [selectedFloorId, setSelectedFloorId] = useState<string>('');
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [fullscreenCamera, setFullscreenCamera] = useState<Camera | null>(null);
@@ -49,19 +62,16 @@ export const App: React.FC = () => {
     setAdminStudioOpen(true);
   };
 
-  // Sync UI Theme (Obsidian Dark vs Silver Crystal Glass)
-  const normalizeTheme = (val?: string | null): UiTheme =>
-    val === 'crystal_glass' ? 'crystal_glass' : 'default';
-
+  // Sync UI Theme across Obsidian Dark, Silver Crystal Glass, and Glassmorphism 20%
   const [cachedTheme] = useState<UiTheme>(() => {
     try {
-      return normalizeTheme(localStorage.getItem('domios_ui_theme'));
+      return normalizeUiTheme(localStorage.getItem('domios_ui_theme'));
     } catch {
       return 'default';
     }
   });
   const activeUiTheme: UiTheme = data?.config?.ui_theme
-    ? normalizeTheme(data.config.ui_theme)
+    ? normalizeUiTheme(data.config.ui_theme)
     : cachedTheme;
 
   React.useEffect(() => {
@@ -82,6 +92,7 @@ export const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-[#090A0C] relative flex flex-col items-center justify-center space-y-4">
         {activeUiTheme === 'crystal_glass' && <div className="glass-crystal-backdrop" aria-hidden="true" />}
+        {activeUiTheme === 'glassmorphism_20' && <div className="glass-20-backdrop" aria-hidden="true" />}
         <div className="relative z-10 flex flex-col items-center space-y-4">
           <img
             src="/domios_logo.png"
@@ -106,6 +117,7 @@ export const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#090A0C] text-[#F5F5F5] flex relative">
       {activeUiTheme === 'crystal_glass' && <div className="glass-crystal-backdrop" aria-hidden="true" />}
+      {activeUiTheme === 'glassmorphism_20' && <div className="glass-20-backdrop" aria-hidden="true" />}
       {/* HomeKey Gate Check */}
       <HomeKeyModal />
 

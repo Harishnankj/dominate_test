@@ -559,4 +559,19 @@ export class ApiService {
       body: JSON.stringify({ deviceId, action }),
     });
   }
+
+  // Local Voice Transcription (Offline Whisper STT)
+  static async getVoiceStatus(): Promise<{ ok: boolean; ready: boolean; loading: boolean; model: string; error?: string | null }> {
+    return this.request('/api/voice/status');
+  }
+
+  static async transcribeVoice(
+    pcm16Base64: string,
+    language: 'en-IN' | 'ml-IN' = 'en-IN'
+  ): Promise<{ ok: boolean; text: string; elapsedMs?: number; rms?: number }> {
+    return this.request('/api/voice/transcribe', {
+      method: 'POST',
+      body: JSON.stringify({ pcm16Base64, language }),
+    });
+  }
 }
